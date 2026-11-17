@@ -14,12 +14,19 @@ final class ProbeModel {
     private(set) var counterError: String?
     private(set) var schemaVersion: Int?
     private(set) var activityMessage = "Nenhum timer iniciado."
+    /// Groups the signature really granted, per bundle (nil: no embedded profile).
+    private(set) var appProfile: ProvisioningProfile?
+    private(set) var widgetProfile: ProvisioningProfile?
 
     var activitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
     var runningActivities: Int { Activity<TimerActivityAttributes>.activities.count }
 
     func reload() {
         status = SharedData.status()
+        appProfile = ProvisioningProfile.load(bundleURL: Bundle.main.bundleURL)
+        widgetProfile = Bundle.main.builtInPlugInsURL.flatMap {
+            ProvisioningProfile.load(bundleURL: $0.appending(path: "IsletoWidgets.appex"))
+        }
         do {
             let url = try SharedData.databaseURL()
             let database = try IsletoDatabase.open(at: url)
@@ -94,12 +101,20 @@ final class ProbeModel {
         Bundle ID: \(Bundle.main.bundleIdentifier ?? "?")
         iOS: \(ProcessInfo.processInfo.operatingSystemVersionString)
         App Group: \(statusText)
+        Grupos concedidos (app): \(Self.describe(appProfile))
+        Grupos concedidos (widget): \(Self.describe(widgetProfile))
+        Perfil expira: \(appProfile?.expirationDate?.formatted(date: .abbreviated, time: .shortened) ?? "?")
         Banco: \(schemaVersion.map { "esquema v\($0)" } ?? "não abriu")
         Contador: \(counter.map(String.init) ?? "—")
         Erro: \(counterError ?? "nenhum")
         Live Activities: \(activitiesEnabled ? "permitidas" : "bloqueadas"), \(runningActivities) ativa(s)
         Último timer: \(activityMessage)
         """
+    }
+
+    static func describe(_ profile: ProvisioningProfile?) -> String {
+        guard let profile else { return "sem perfil embutido" }
+        return profile.appGroups.isEmpty ? "nenhum" : profile.appGroups.joined(separator: ", ")
     }
 
     /// Launch arguments used only by the CI screenshot script.

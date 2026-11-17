@@ -54,6 +54,7 @@ struct ProbeView: View {
                     .foregroundStyle(.red)
                     .font(.headline)
                 LabeledContent("Grupo", value: id)
+                LabeledContent("Concedidos", value: ProbeModel.describe(model.appProfile))
                 Text("A assinatura não concedeu este App Group. Me envie o diagnóstico abaixo.")
                     .font(.footnote)
             }
