@@ -35,6 +35,8 @@ targets:
       - Shared
     dependencies:
       - package: IsletoCore
+      # Embedded in Isleto.app/PlugIns.
+      - target: IsletoWidgets
     info:
       path: App/Info.plist
       properties:
@@ -51,6 +53,31 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.isleto.ios
         CODE_SIGN_ENTITLEMENTS: App/Isleto.entitlements
+
+  # Widget + Live Activity in one extension (one App ID).
+  IsletoWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+      - Shared
+    dependencies:
+      - package: IsletoCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: Isleto Widgets
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        IsletoAppGroup: $(APP_GROUP_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.isleto.ios.widgets
+        CODE_SIGN_ENTITLEMENTS: Widgets/IsletoWidgets.entitlements
 
 schemes:
   Isleto:
