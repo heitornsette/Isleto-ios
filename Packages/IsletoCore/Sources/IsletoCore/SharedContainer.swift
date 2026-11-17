@@ -2,8 +2,11 @@ import Foundation
 
 /// Locates the App Group container shared by the app and the widget extension.
 ///
-/// No fallback on purpose: if the App Group is not granted by the signature, the app
-/// must say so, so the feasibility test shows the real result.
+/// With a free Apple ID, signing tools (iloader, SideStore, AltStore) rename the App
+/// Group by appending the team ID, e.g. `group.app.isleto.ios.ABCDE12345`, so the
+/// identifier in the Info.plist is not the one the signature granted. The real one is
+/// taken from what the signing tool says, never guessed. No fallback container: if
+/// nothing was granted, the app must say so.
 public enum SharedContainer {
     /// Info.plist key with the App Group identifier (set from project.yml).
     public static let infoPlistKey = "IsletoAppGroup"
@@ -19,22 +22,39 @@ public enum SharedContainer {
         case unavailable(groupID: String)
     }
 
-    /// The App Group identifier, preferring the one written by AltStore/SideStore.
-    public static func groupID(infoDictionary: [String: Any]?) -> String? {
+    /// The App Group identifier to use, in this order:
+    /// 1. the one written by AltStore/SideStore in `ALTAppGroups`;
+    /// 2. the configured one, if the signature granted it unchanged (paid account, Xcode);
+    /// 3. the granted one that is the configured one plus a suffix (renamed by the signer);
+    /// 4. the configured one, which will then show as unavailable.
+    ///
+    /// - Parameter grantedGroups: App Groups of the embedded provisioning profile,
+    ///   nil when there is no profile (simulator, unsigned build).
+    public static func groupID(infoDictionary: [String: Any]?, grantedGroups: [String]? = nil) -> String? {
         if let rewritten = infoDictionary?[altStoreKey] as? [String], let first = rewritten.first, !first.isEmpty {
             return first
         }
-        if let id = infoDictionary?[infoPlistKey] as? String, !id.isEmpty {
-            return id
+        guard let configured = infoDictionary?[infoPlistKey] as? String, !configured.isEmpty else {
+            return nil
         }
-        return nil
+        guard let granted = grantedGroups else {
+            return configured
+        }
+        if granted.contains(configured) {
+            return configured
+        }
+        if let renamed = granted.sorted().first(where: { $0.hasPrefix(configured + ".") }) {
+            return renamed
+        }
+        return configured
     }
 
     public static func resolve(
         infoDictionary: [String: Any]?,
+        grantedGroups: [String]? = nil,
         containerURL: (String) -> URL? = { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) }
     ) -> Status {
-        guard let id = groupID(infoDictionary: infoDictionary) else {
+        guard let id = groupID(infoDictionary: infoDictionary, grantedGroups: grantedGroups) else {
             return .missingGroupID
         }
         guard let url = containerURL(id) else {
