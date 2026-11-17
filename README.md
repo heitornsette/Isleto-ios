@@ -5,7 +5,11 @@ App iOS do **Isleto**, um tracker de vida (produtividade, saúde e rotina). A ve
 do desktop, para a sincronização futura ser direta.
 
 Tudo é gratuito: não há Mac. O código é editado no Windows, compilado no GitHub Actions
-(`macos-latest`) e instalado no iPhone pelo Sideloadly, com um Apple ID gratuito.
+(`macos-latest`) e instalado no iPhone pelo **iloader**, com um Apple ID gratuito.
+
+> O Sideloadly gratuito instala o app, mas **não concede o App Group** (só a opção paga
+> "custom entitlements" faria isso). Sem App Group, o app e o widget não compartilham dados.
+> Por isso a instalação usa o iloader.
 
 ## Estado atual: marco 1, teste de viabilidade
 
@@ -47,12 +51,17 @@ O que existe:
   atualizam com o app aberto ou por um botão com App Intent.
 - **Assinatura de mentira na CI**: sem assinatura real (`CODE_SIGNING_ALLOWED=NO`), o Xcode
   descarta os entitlements, como o App Group. Por isso a CI grava os entitlements em cada binário
-  com `ldid -S` antes de montar o `.ipa`. O Sideloadly lê esses entitlements para saber que deve
-  pedir o App Group quando assina com o seu Apple ID.
+  com `ldid -S` antes de montar o `.ipa`. A ferramenta de instalação lê esses entitlements para
+  saber que deve pedir o App Group quando assina com o seu Apple ID.
 - **Identificadores**: app `app.isleto.ios`, extensão `app.isleto.ios.widgets`, App Group
   `group.app.isleto.ios`. O App Group aparece em três lugares que precisam ser iguais:
   `project.yml` (`APP_GROUP_ID`), `App/Isleto.entitlements` e `Widgets/IsletoWidgets.entitlements`.
   A CI falha se eles divergirem.
+- **Nomes trocados na assinatura**: com Apple ID gratuito, o iloader acrescenta o Team ID da
+  conta aos nomes, por exemplo `app.isleto.ios.ABCDE12345` e `group.app.isleto.ios.ABCDE12345`.
+  O app descobre o nome real do App Group no perfil de assinatura embutido
+  (`embedded.mobileprovision`), e não por palpite. Também aceita a chave `ALTAppGroups`,
+  que o AltStore e o SideStore gravam.
 
 ## O que a CI faz
 
@@ -110,20 +119,27 @@ commit ou workflow: o repositório é público.
 
 ### 4. Preparar o Windows (só na primeira vez)
 
-1. Instale o **iTunes** e o **iCloud** baixados do site da Apple (as versões "para Windows"
-   fora da Microsoft Store). O Sideloadly precisa dos drivers dessas versões.
-2. Baixe o **Sideloadly** do site oficial, `sideloadly.io`, e instale.
+1. Instale o **iTunes** baixado do site da Apple (`apple.com/itunes`), não o da Microsoft Store.
+   Ele traz o driver USB que o Windows usa para falar com o iPhone.
+2. Instale o **iloader** pelo instalador oficial indicado na documentação do SideStore
+   (`docs.sidestore.io`): o arquivo `iloader-windows-x64.msi` da página de releases do iloader
+   no GitHub.
 3. Ligue o iPhone no PC pelo cabo. No iPhone, toque em **Confiar** e digite o código do aparelho.
 
-### 5. Instalar com o Sideloadly
+### 5. Instalar com o iloader
 
-1. Abra o Sideloadly. O iPhone deve aparecer no campo do aparelho.
-2. Arraste o `Isleto.ipa` para a janela (ou clique no ícone do `.ipa` e escolha o arquivo).
-3. No campo **Apple account**, digite o e-mail do seu Apple ID **secundário**.
-4. Não mude as **Advanced options**. Principalmente, **não mude o Bundle ID**: o App Group
-   depende dele.
-5. Clique em **Start**. Digite a senha do Apple ID e, se pedir, o código de verificação.
-6. Espere a mensagem **Done**.
+1. Abra o iloader. Em **Apple ID**, entre com o seu Apple ID **secundário**. Se pedir, digite o
+   código de verificação.
+2. Em **iDevice**, clique no seu iPhone para selecioná-lo.
+3. Em **Installers**, clique em **Import IPA** e escolha o `Isleto.ipa`.
+4. Espere terminar. Se o app já estiver instalado, aceite a substituição: os dados ficam.
+
+Se o login falhar com `finishMachineProvisioning` e `401 Unauthorized`, o problema não é a senha:
+é o servidor "anisette" do iloader. Em **Settings**, escolha outro **Anisette Server** (o
+"iloader" funcionou), clique em **Reset Anisette State** e tente de novo.
+
+Se aparecer "Verification codes can't be sent to this phone number at this time", a Apple
+bloqueou o SMS por excesso de tentativas. Pare de tentar e espere algumas horas.
 
 ### 6. Liberar o app no iPhone (só na primeira vez)
 
@@ -136,8 +152,8 @@ commit ou workflow: o repositório é público.
 
 Faça na ordem e anote o primeiro passo que falhar:
 
-1. Abra o **Isleto**. Na seção **App Group** deve aparecer **OK** em verde, com
-   `group.app.isleto.ios`, e "isleto.db, esquema v4".
+1. Abra o **Isleto**. Na seção **App Group** deve aparecer **OK** em verde, com um grupo que
+   começa com `group.app.isleto.ios` (o final com o Team ID é normal), e "isleto.db, esquema v4".
 2. Toque em **+1** três vezes. O contador mostra **3**.
 3. Na Tela de Início, toque e segure num espaço vazio, toque em **+** (ou **Editar >
    Adicionar Widget**), procure **Isleto** e adicione o **Contador de teste**. Ele deve
@@ -157,16 +173,17 @@ Faça na ordem e anote o primeiro passo que falhar:
 
 Com Apple ID gratuito, o app para de abrir 7 dias depois da instalação. Para renovar, repita o
 passo 5 com o mesmo `.ipa` ou um mais novo. Instalar por cima mantém os dados.
+A linha "Perfil expira" do Diagnóstico mostra a data.
 
 ## Como me reportar um erro
 
 Abra uma issue neste repositório (ou me mande uma mensagem) com:
 
 ```text
-Passo que falhou: (número do passo 7, ou "CI", ou "Sideloadly")
+Passo que falhou: (número do passo 7, ou "CI", ou "instalação")
 O que aconteceu: (o que você viu, com o texto exato da mensagem de erro)
 iPhone e iOS: (ex.: iPhone 15 Pro, iOS 18.1)
-Versão do Sideloadly:
+Ferramenta de instalação e versão: (ex.: iloader 2.4.1)
 Execução da CI: (link da execução em Actions)
 Diagnóstico do app: (no app, seção Diagnóstico > Copiar diagnóstico, e cole aqui)
 ```
@@ -185,8 +202,14 @@ número de série ou UDID do iPhone. O diagnóstico do app não contém nenhum d
   **10 App IDs novos por semana**. O Isleto usa 2 (app e widgets). Não crie e apague targets à toa.
 - Sem push (APNs), sem iCloud e sem CloudKit.
 
-SideStore e AltStore ficam para depois que o fluxo com o Sideloadly funcionar.
-O app já lê a chave `ALTAppGroups`, que essas ferramentas usam quando renomeiam o App Group.
+O que foi testado com Apple ID gratuito (novembro de 2026):
+
+- **Sideloadly**: instala, mas não concede o App Group sem a opção paga.
+- **AltServer para Windows**: falhou com "anisette data is invalid"; o iCloud de 2020 que ele
+  exige não consegue mais entrar no Apple ID.
+- **iloader**: instala e concede o App Group ao app e ao widget, com o nome renomeado.
+- **SideStore**: instalado pelo iloader; renova pelo próprio iPhone com o LocalDevVPN ligado.
+  A instalação do Isleto por ele ainda não foi testada.
 
 ## Regra de commits
 
