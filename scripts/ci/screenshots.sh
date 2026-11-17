@@ -55,17 +55,19 @@ launch() {
 }
 
 launch
-shot 01-app-inicio
-launch --demo-increment 3
-shot 02-contador-somado
-launch --demo-scroll widget
-shot 03-previa-do-widget
-launch --demo-timer --demo-scroll live
-shot 04-live-activity-iniciada
+shot 01-hoje-vazio
+launch --demo-seed
+shot 02-hoje-com-dados
+launch --demo-scroll habits
+shot 03-habitos
+launch --demo-focus
+shot 04-foco-ativo
 # Leaving the app shows the Live Activity in the Dynamic Island (Pro simulators).
 xcrun simctl launch "$udid" com.apple.Preferences >/dev/null || true
 sleep 4
 shot 05-dynamic-island
+launch --demo-diagnostics
+shot 06-diagnostico-e-widget
 xcrun simctl ui "$udid" appearance dark || true
-launch --demo-scroll diagnostics
-shot 06-diagnostico-escuro
+launch
+shot 07-hoje-escuro
