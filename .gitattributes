@@ -1,0 +1,5 @@
+# Edited on Windows, built on macOS: keep LF in the repository so shell scripts
+# and plists work on the CI runner.
+* text=auto eol=lf
+*.png binary
+*.ipa binary
