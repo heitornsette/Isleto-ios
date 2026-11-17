@@ -10,18 +10,26 @@ struct ProbeView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                appGroupSection
-                counterSection
-                widgetSection
-                activitySection
-                diagnosticsSection
+            ScrollViewReader { proxy in
+                List {
+                    appGroupSection
+                    counterSection
+                    widgetSection
+                    activitySection
+                    diagnosticsSection
+                }
+                .navigationTitle("Isleto · teste")
+                .task {
+                    model.reload()
+                    let arguments = ProcessInfo.processInfo.arguments
+                    model.runDemo(arguments: arguments)
+                    // CI screenshots only: "--demo-scroll widget|live|diagnostics".
+                    if let index = arguments.firstIndex(of: "--demo-scroll"), index + 1 < arguments.count {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        proxy.scrollTo(arguments[index + 1], anchor: .top)
+                    }
+                }
             }
-            .navigationTitle("Isleto · teste")
-        }
-        .task {
-            model.reload()
-            model.runDemo(arguments: ProcessInfo.processInfo.arguments)
         }
         .onChange(of: scenePhase) { _, phase in
             // The widget may have changed the counter while the app was in the background.
@@ -84,6 +92,7 @@ struct ProbeView: View {
                 .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .frame(maxWidth: .infinity)
                 .listRowBackground(Color.clear)
+                .id("widget")
         } header: {
             Text("Prévia do widget")
         } footer: {
@@ -100,6 +109,7 @@ struct ProbeView: View {
                 Button("Encerrar", role: .destructive) { model.endAllTimers() }
             }
             .buttonStyle(.bordered)
+            .id("live")
             Text(model.activityMessage).font(.footnote).foregroundStyle(.secondary)
         } header: {
             Text("Live Activity")
@@ -113,6 +123,7 @@ struct ProbeView: View {
             Text(model.diagnostics())
                 .font(.caption.monospaced())
                 .textSelection(.enabled)
+                .id("diagnostics")
             Button(copied ? "Copiado" : "Copiar diagnóstico") {
                 UIPasteboard.general.string = model.diagnostics()
                 copied = true
