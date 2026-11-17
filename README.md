@@ -11,20 +11,23 @@ Tudo é gratuito: não há Mac. O código é editado no Windows, compilado no Gi
 > "custom entitlements" faria isso). Sem App Group, o app e o widget não compartilham dados.
 > Por isso a instalação usa o iloader.
 
-## Estado atual: marco 1, teste de viabilidade
+## Estado atual: marco 2, "Hoje"
 
-O app atual é só um teste. Ele deve provar três coisas:
+**Marco 1 (concluído em 17/11/2026)**: teste de viabilidade. Provou que o app compila sem Mac,
+instala com Apple ID gratuito (pelo iloader) e que o app e o widget compartilham dados pelo
+App Group.
 
-1. O app compila sem Mac (na CI).
-2. O app assina e instala com um Apple ID gratuito.
-3. O app e o widget compartilham dados pelo App Group depois do sideload.
+**Marco 2 (em teste)**: as funções do dia, com as mesmas regras e padrões do desktop.
 
-O que existe:
+- **Água**: meta de 2000 ml, copo de 250 ml, desfazer o último registro de hoje.
+- **Foco**: sessão de 25 min. O tempo aparece na Dynamic Island e na tela bloqueada, e uma
+  notificação local avisa o fim. A sessão concluída é gravada mesmo se o app estiver fechado
+  (ela é registrada na próxima vez que o app ou o widget abrir).
+- **Hábitos**: até 4, marcar e desmarcar o dia, sequência de dias seguidos.
+- **Widget médio "Hoje"**: água com botão **+250 ml**, foco do dia e hábitos com toque para marcar.
+- **Diagnóstico**: no ícone do estetoscópio, com a prévia do widget e o texto para relatar erros.
 
-- **App**: um contador gravado no banco SQLite dentro do App Group, uma prévia do widget,
-  botões para iniciar e encerrar uma Live Activity e um bloco de diagnóstico.
-- **Widget** (pequeno): mostra o contador e tem um botão **+1** (App Intent).
-- **Live Activity**: um timer na Dynamic Island e na tela bloqueada.
+Pausas do pomodoro, timers avulsos, lembretes e a sincronização com o desktop ficam para depois.
 
 ## Estrutura
 
@@ -34,21 +37,23 @@ O que existe:
 | `App/` | App SwiftUI e `Isleto.entitlements`. |
 | `Widgets/` | Extensão única com o widget e a Live Activity, e `IsletoWidgets.entitlements`. |
 | `Shared/` | Código compilado no app e na extensão (App Intent, dados da Live Activity, acesso ao banco). |
-| `Packages/IsletoCore/` | Swift Package com a lógica (esquema, contador, sequência de hábitos, timer) e os testes. |
+| `Packages/IsletoCore/` | Swift Package com a lógica (esquema, água, foco, hábitos, App Group) e os testes. |
 | `scripts/ci/` | Scripts usados pelo workflow. |
 | `.github/workflows/ci.yml` | Workflow do GitHub Actions. |
 
 ### Decisões técnicas
 
 - **Banco**: SQLite (GRDB) no container do App Group, arquivo `isleto.db`. As migrações são
-  as mesmas do desktop, com o mesmo controle por `PRAGMA user_version`. O contador de teste
-  fica na tabela `settings` do desktop (chave `probe_counter`), então o iOS não cria nenhuma
-  tabela que o desktop não tenha. Se uma migração mudar, ela muda nos dois repositórios.
+  as mesmas do desktop, com o mesmo controle por `PRAGMA user_version`. Datas são gravadas como
+  texto em hora local, no mesmo formato do desktop. A sessão de foco em andamento fica na tabela
+  `settings` do desktop (chave `focus_active`), então o iOS não cria nenhuma tabela que o desktop
+  não tenha. Se uma migração mudar, ela muda nos dois repositórios.
 - **Sequência de hábitos**: conta dias seguidos. Se hoje ainda não foi marcado, a sequência de
   ontem continua valendo até o fim do dia. A regra é a mesma do desktop, com os mesmos testes.
 - **Sem push (APNs)**: a conta gratuita não tem push. A Live Activity só se atualiza sozinha com
-  timers do sistema (`Text(timerInterval:)` e `ProgressView(timerInterval:)`). Contadores só
-  atualizam com o app aberto ou por um botão com App Intent.
+  timers do sistema (`Text(timerInterval:)` e `ProgressView(timerInterval:)`). Os números do
+  widget só mudam com o app aberto, por um botão com App Intent, no fim de um foco ou à
+  meia-noite. Notificações **locais** funcionam na conta gratuita.
 - **Assinatura de mentira na CI**: sem assinatura real (`CODE_SIGNING_ALLOWED=NO`), o Xcode
   descarta os entitlements, como o App Group. Por isso a CI grava os entitlements em cada binário
   com `ldid -S` antes de montar o `.ipa`. A ferramenta de instalação lê esses entitlements para
@@ -103,12 +108,13 @@ commit ou workflow: o repositório é público.
 1. Em **Actions**, abra a execução mais recente do **CI**.
 2. No fim da página, em **Artifacts**, baixe **capturas-de-tela** (vem em `.zip`).
 3. Extraia. As imagens são:
-   - `01-app-inicio.png`: a tela inicial. A seção **App Group** deve mostrar **OK** em verde.
-   - `02-contador-somado.png`: o contador depois de três somas.
-   - `03-previa-do-widget.png`: a prévia do widget.
-   - `04-live-activity-iniciada.png`: a mensagem "Timer de 25 min iniciado.".
-   - `05-dynamic-island.png`: o timer na Dynamic Island, fora do app.
-   - `06-diagnostico-escuro.png`: o bloco de diagnóstico, no modo escuro.
+   - `01-hoje-vazio.png`: a tela "Hoje" sem dados.
+   - `02-hoje-com-dados.png`: água, um foco concluído e três hábitos de exemplo.
+   - `03-habitos.png`: a seção de hábitos, com a sequência.
+   - `04-foco-ativo.png`: um foco de 25 min em andamento.
+   - `05-dynamic-island.png`: o foco na Dynamic Island, fora do app.
+   - `06-diagnostico-e-widget.png`: o diagnóstico (App Group **OK**) e a prévia do widget.
+   - `07-hoje-escuro.png`: a tela "Hoje" no modo escuro.
    - `modo-de-build.txt`: como o app foi assinado para o simulador. Se disser "sem assinatura",
      um App Group com falha **nas capturas** não indica falha no iPhone.
 
@@ -152,22 +158,28 @@ bloqueou o SMS por excesso de tentativas. Pare de tentar e espere algumas horas.
 
 Faça na ordem e anote o primeiro passo que falhar:
 
-1. Abra o **Isleto**. Na seção **App Group** deve aparecer **OK** em verde, com um grupo que
-   começa com `group.app.isleto.ios` (o final com o Team ID é normal), e "isleto.db, esquema v4".
-2. Toque em **+1** três vezes. O contador mostra **3**.
-3. Na Tela de Início, toque e segure num espaço vazio, toque em **+** (ou **Editar >
-   Adicionar Widget**), procure **Isleto** e adicione o **Contador de teste**. Ele deve
-   mostrar **3**.
-4. Toque em **+1** no widget. O widget mostra **4**.
-5. Abra o app. O contador mostra **4**. *(Prova que o widget grava e o app lê.)*
-6. Toque em **+1** no app (**5**) e volte à Tela de Início. O widget mostra **5**.
-   *(Prova que o app grava e o widget lê.)*
-7. No app, toque em **1 min**. Saia do app: o timer aparece na Dynamic Island.
-   Toque e segure a ilha para ver a versão expandida.
-8. Feche o app de vez (deslize para cima no seletor de apps) e bloqueie a tela.
-   O timer continua contando na tela bloqueada e chega a 0:00.
-9. Abra o app e toque em **Encerrar**. A Live Activity some.
-10. Feche e abra o app de novo. O contador mantém o valor.
+1. Abra o **Isleto**, toque no ícone do estetoscópio (**Diagnóstico**) e confira **App Group: OK**,
+   com um grupo que começa com `group.app.isleto.ios` (o final com o Team ID é normal), e
+   "esquema v4". Feche com **OK**.
+2. **Água**: toque em **+250 ml** duas vezes. Mostra **500 / 2000 ml**. **Desfazer** volta a 250.
+3. **Hábitos**: adicione "Ler" e "Meditar". Toque em "Ler": fica marcado, com a chama **1**.
+   Toque de novo: desmarca. Deixe marcado.
+4. **Widget**: na Tela de Início, remova o widget antigo "Contador de teste", se existir.
+   Toque e segure num espaço vazio, **Editar > Adicionar Widget**, procure **Isleto** e adicione
+   o **Hoje** (médio). Ele mostra a mesma água e os mesmos hábitos do app.
+5. No widget, toque em **+250 ml** e em "Meditar". Abra o app: a água subiu e "Meditar" está
+   marcado. *(O widget grava e o app lê.)*
+6. **Foco**: toque em **Iniciar foco de 25 min**. Na primeira vez, permita as notificações.
+   Saia do app: o tempo aparece na Dynamic Island e no widget.
+7. Feche o app de vez (deslize para cima no seletor de apps) e bloqueie a tela. O tempo
+   continua na tela bloqueada. No fim, chega a notificação "Foco concluído".
+8. Abra o app: a Live Activity sumiu e o rodapé do Foco diz **1 foco(s) concluído(s) hoje**.
+   O widget mostra **1 foco(s) hoje**.
+9. **Cancelar**: inicie outro foco e toque em **Cancelar foco**. A Live Activity some e o total
+   de focos não muda.
+
+Para testar o fim do foco sem esperar 25 min, deixe o teste 7 para quando puder esperar. O
+restante leva poucos minutos.
 
 ### 8. Renovar a cada 7 dias
 
@@ -224,7 +236,7 @@ Commits seguem o [Conventional Commits](https://www.conventionalcommits.org/pt-b
 Exemplos:
 
 ```text
-feat(widgets): adiciona widget do contador e Live Activity do timer
+feat(widgets): adiciona widget médio com água, foco e hábitos
 fix(core): corrige a sequência de hábitos na virada do ano
 docs: explica como renovar o app a cada 7 dias
 ```
