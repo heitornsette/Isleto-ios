@@ -19,8 +19,7 @@ public enum HabitStreak {
 
     /// "YYYY-MM-DD" of `date` in `calendar`'s time zone, like SQLite's `date('now', 'localtime')`.
     public static func dayString(for date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04ld-%02ld-%02ld", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        LocalTime.day(date, calendar: calendar)
     }
 
     /// Consecutive days with a check, newest first. Counts from today, or from yesterday
