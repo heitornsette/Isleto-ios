@@ -2,7 +2,7 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-/// Live Activity of the test timer, on the lock screen and in the Dynamic Island.
+/// Live Activity of the focus session, on the lock screen and in the Dynamic Island.
 ///
 /// Only system timers (`Text(timerInterval:)`, `ProgressView(timerInterval:)`):
 /// they keep counting with the app closed. A free Apple ID has no push, so nothing
@@ -17,9 +17,9 @@ struct TimerLiveActivity: Widget {
             let range = context.state.range
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label("Isleto", systemImage: "timer")
+                    Label(context.attributes.title, systemImage: "timer")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.teal)
+                        .foregroundStyle(Color.isletoFocus)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Text(timerInterval: range, countsDown: true)
@@ -29,24 +29,26 @@ struct TimerLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(context.attributes.title).font(.caption)
+                        (Text("Termina às ") + Text(range.upperBound, style: .time))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         ProgressView(timerInterval: range, countsDown: true) {
                             EmptyView()
                         } currentValueLabel: {
                             EmptyView()
                         }
-                        .tint(.teal)
+                        .tint(Color.isletoFocus)
                     }
                 }
             } compactLeading: {
-                Image(systemName: "timer").foregroundStyle(.teal)
+                Image(systemName: "timer").foregroundStyle(Color.isletoFocus)
             } compactTrailing: {
                 Text(timerInterval: range, countsDown: true)
                     .monospacedDigit()
                     .multilineTextAlignment(.trailing)
                     .frame(maxWidth: 46)
             } minimal: {
-                Image(systemName: "timer").foregroundStyle(.teal)
+                Image(systemName: "timer").foregroundStyle(Color.isletoFocus)
             }
         }
     }
@@ -67,7 +69,7 @@ private struct LockScreenTimerView: View {
                 } currentValueLabel: {
                     EmptyView()
                 }
-                .tint(.teal)
+                .tint(Color.isletoFocus)
             }
             Text(timerInterval: range, countsDown: true)
                 .font(.title.monospacedDigit().weight(.semibold))

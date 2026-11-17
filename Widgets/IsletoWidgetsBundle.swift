@@ -6,7 +6,7 @@ import WidgetKit
 @main
 struct IsletoWidgetsBundle: WidgetBundle {
     var body: some Widget {
-        CounterWidget()
+        TodayWidget()
         TimerLiveActivity()
     }
 }

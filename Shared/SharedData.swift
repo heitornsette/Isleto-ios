@@ -36,7 +36,7 @@ enum SharedData {
         return url.appending(path: IsletoDatabase.fileName)
     }
 
-    static func counter() throws -> ProbeCounter {
-        ProbeCounter(database: try IsletoDatabase.open(at: databaseURL()))
+    static func store() throws -> IsletoStore {
+        IsletoStore(database: try IsletoDatabase.open(at: databaseURL()))
     }
 }

@@ -4,7 +4,7 @@ import SwiftUI
 struct IsletoApp: App {
     var body: some Scene {
         WindowGroup {
-            ProbeView()
+            TodayView()
         }
     }
 }
