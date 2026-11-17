@@ -1,0 +1,75 @@
+# Builds and tests the iOS app on a macOS runner (there is no Mac locally).
+# No secrets are used: the .ipa is built without a real signature and is signed
+# later, on the user's PC, by Sideloadly with a free Apple ID.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: Build, testes e capturas
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versões das ferramentas
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Instalar XcodeGen e ldid
+        run: brew install xcodegen ldid
+
+      - name: Testes do IsletoCore (macOS)
+        run: swift test --package-path Packages/IsletoCore
+
+      - name: Gerar Isleto.xcodeproj
+        run: xcodegen generate
+
+      - name: Testes do IsletoCore (simulador iOS)
+        run: bash scripts/ci/test-on-simulator.sh
+
+      - name: Gerar Isleto.ipa (sem assinatura + ldid)
+        run: bash scripts/ci/build-ipa.sh
+
+      - name: Capturas de tela no simulador
+        run: bash scripts/ci/screenshots.sh
+
+      - name: Publicar Isleto.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Isleto-ipa
+          path: build/Isleto.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publicar capturas de tela
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-de-tela
+          path: build/screenshots
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Publicar logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: build/logs
+          if-no-files-found: ignore
+          retention-days: 14
