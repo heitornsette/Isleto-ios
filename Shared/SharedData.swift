@@ -19,8 +19,13 @@ enum SharedData {
         }
     }
 
+    /// Each process reads its own bundle: the app's profile in the app, the
+    /// extension's profile in the widget. Both are granted the same group.
     static func status() -> SharedContainer.Status {
-        SharedContainer.resolve(infoDictionary: Bundle.main.infoDictionary)
+        SharedContainer.resolve(
+            infoDictionary: Bundle.main.infoDictionary,
+            grantedGroups: ProvisioningProfile.load(bundleURL: Bundle.main.bundleURL)?.appGroups
+        )
     }
 
     static func databaseURL() throws -> URL {
