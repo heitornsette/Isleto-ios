@@ -55,6 +55,12 @@ Treinos, pausas do pomodoro, timers avulsos e a sincronização com o desktop fi
   repositórios. A migração v5 (campos dos hábitos e categorias) só acrescenta colunas e tabelas,
   e existe igual no desktop; lá o painel mostra só os 4 primeiros hábitos visíveis (não
   arquivados, de Criar, do tipo Sim/Não), na ordem do iOS.
+- **Preparação para a nuvem (migração v6)**: cada linha que vai para a nuvem ganha `uuid`,
+  `updated_at`, `updated_by` (o aparelho) e `dirty` (ainda não enviada). Apagar deixa uma cópia
+  em `sync_tombstones`, para o apagamento chegar aos outros aparelhos. Triggers do SQLite cuidam
+  disso, então o código continua com INSERT, UPDATE e DELETE simples. `sync_state` guarda o id
+  deste aparelho e o cursor da sincronização. O servidor fica no repositório privado
+  `isleto-cloud`; a sincronização em si ainda não existe.
 - **Sequência de hábitos**: conta dias seguidos. Se hoje ainda não foi marcado, a sequência de
   ontem continua valendo até o fim do dia. A regra é a mesma do desktop, com os mesmos testes.
 - **Sem push (APNs)**: a conta gratuita não tem push. A Live Activity só se atualiza sozinha com
