@@ -18,15 +18,18 @@ final class SchemaTests: XCTestCase {
         let db = try IsletoDatabase.inMemory()
         let expected: [String: [String]] = [
             "settings": ["key", "value"],
-            "focus_sessions": ["id", "finished_at", "minutes"],
-            "water_logs": ["id", "logged_at", "ml"],
+            "focus_sessions": ["id", "finished_at", "minutes", "uuid", "updated_at", "updated_by", "dirty"],
+            "water_logs": ["id", "logged_at", "ml", "uuid", "updated_at", "updated_by", "dirty"],
             "habits": [
                 "id", "name", "created_at", "description", "icon", "color", "kind", "schedule",
                 "record", "target", "unit", "reminders", "archived", "sort_order",
+                "uuid", "updated_at", "updated_by", "dirty",
             ],
-            "habit_checks": ["habit_id", "day", "value"],
-            "habit_categories": ["id", "name", "created_at"],
-            "habit_category_links": ["habit_id", "category_id"],
+            "habit_checks": ["habit_id", "day", "value", "updated_at", "updated_by", "dirty"],
+            "habit_categories": ["id", "name", "created_at", "uuid", "updated_at", "updated_by", "dirty"],
+            "habit_category_links": ["habit_id", "category_id", "updated_at", "updated_by", "dirty"],
+            "sync_state": ["id", "device_id", "cursor", "applying", "last_sync"],
+            "sync_tombstones": ["tbl", "key", "row", "deleted_at", "deleted_by"],
         ]
         try db.read { db in
             let tables = try String.fetchAll(

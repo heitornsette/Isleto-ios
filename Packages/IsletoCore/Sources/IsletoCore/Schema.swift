@@ -72,6 +72,206 @@ public enum Schema {
             PRIMARY KEY (habit_id, category_id)
         );
         """,
+        // v6: sync with the cloud (isleto-cloud; same migration in the desktop). Only adds:
+        //   uuid (rows with an id), updated_at (UTC), updated_by (device) and dirty (not sent yet);
+        //   sync_state: this device's id, the pull cursor, and the "applying" flag the sync engine
+        //   sets while it writes remote rows (triggers then leave the rows alone);
+        //   sync_tombstones: a copy of each deleted row, so the delete reaches the other devices.
+        // Triggers keep those columns up to date, so app code keeps plain INSERT/UPDATE/DELETE.
+        """
+        CREATE TABLE sync_state (
+            id        INTEGER PRIMARY KEY CHECK (id = 1),
+            device_id TEXT NOT NULL,
+            cursor    INTEGER NOT NULL DEFAULT 0,
+            applying  INTEGER NOT NULL DEFAULT 0,
+            last_sync TEXT NOT NULL DEFAULT ''
+        );
+        INSERT INTO sync_state (id, device_id) VALUES (1, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))));
+        CREATE TABLE sync_tombstones (
+            tbl        TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            row        TEXT NOT NULL,
+            deleted_at TEXT NOT NULL,
+            deleted_by TEXT NOT NULL,
+            PRIMARY KEY (tbl, key)
+        );
+
+        ALTER TABLE habits ADD COLUMN uuid TEXT;
+        ALTER TABLE habit_categories ADD COLUMN uuid TEXT;
+        ALTER TABLE water_logs ADD COLUMN uuid TEXT;
+        ALTER TABLE focus_sessions ADD COLUMN uuid TEXT;
+        ALTER TABLE habits ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habits ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habits ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE habit_checks ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_checks ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_checks ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE habit_categories ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_categories ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_categories ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE habit_category_links ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_category_links ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habit_category_links ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE water_logs ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE water_logs ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE water_logs ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE focus_sessions ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+        ALTER TABLE focus_sessions ADD COLUMN updated_by TEXT NOT NULL DEFAULT '';
+        ALTER TABLE focus_sessions ADD COLUMN dirty INTEGER NOT NULL DEFAULT 1;
+
+        UPDATE habits SET uuid = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)));
+        UPDATE habit_categories SET uuid = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)));
+        UPDATE water_logs SET uuid = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)));
+        UPDATE focus_sessions SET uuid = lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)));
+        UPDATE habits SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        UPDATE habit_checks SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        UPDATE habit_categories SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        UPDATE habit_category_links SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        UPDATE water_logs SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        UPDATE focus_sessions SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state);
+        CREATE UNIQUE INDEX habits_uuid ON habits (uuid);
+        CREATE UNIQUE INDEX habit_categories_uuid ON habit_categories (uuid);
+        CREATE UNIQUE INDEX water_logs_uuid ON water_logs (uuid);
+        CREATE UNIQUE INDEX focus_sessions_uuid ON focus_sessions (uuid);
+
+        CREATE TRIGGER habits_sync_insert AFTER INSERT ON habits
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE habits SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'habits' AND key = (SELECT uuid FROM habits WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER habits_sync_update AFTER UPDATE ON habits
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE habits SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER habits_sync_delete AFTER DELETE ON habits
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('habits', OLD.uuid,
+                json_object('id', OLD.uuid, 'name', OLD.name, 'created_at', OLD.created_at, 'description', OLD.description,
+                    'icon', OLD.icon, 'color', OLD.color, 'kind', OLD.kind, 'schedule', OLD.schedule, 'record', OLD.record,
+                    'target', OLD.target, 'unit', OLD.unit, 'reminders', OLD.reminders, 'archived', OLD.archived,
+                    'sort_order', OLD.sort_order),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+
+        CREATE TRIGGER habit_checks_sync_insert AFTER INSERT ON habit_checks
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE habit_checks SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE habit_id = NEW.habit_id AND day = NEW.day;
+            DELETE FROM sync_tombstones WHERE tbl = 'habit_checks'
+                AND key = (SELECT uuid FROM habits WHERE id = NEW.habit_id) || '|' || NEW.day;
+        END;
+        CREATE TRIGGER habit_checks_sync_update AFTER UPDATE ON habit_checks
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE habit_checks SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE habit_id = NEW.habit_id AND day = NEW.day;
+        END;
+        CREATE TRIGGER habit_checks_sync_delete AFTER DELETE ON habit_checks
+        WHEN (SELECT applying FROM sync_state) = 0 AND (SELECT uuid FROM habits WHERE id = OLD.habit_id) IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('habit_checks',
+                (SELECT uuid FROM habits WHERE id = OLD.habit_id) || '|' || OLD.day,
+                json_object('habit_id', (SELECT uuid FROM habits WHERE id = OLD.habit_id), 'day', OLD.day, 'value', OLD.value),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+
+        CREATE TRIGGER habit_categories_sync_insert AFTER INSERT ON habit_categories
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE habit_categories SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'habit_categories' AND key = (SELECT uuid FROM habit_categories WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER habit_categories_sync_update AFTER UPDATE ON habit_categories
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE habit_categories SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER habit_categories_sync_delete AFTER DELETE ON habit_categories
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('habit_categories', OLD.uuid,
+                json_object('id', OLD.uuid, 'name', OLD.name, 'created_at', OLD.created_at),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+
+        CREATE TRIGGER habit_category_links_sync_insert AFTER INSERT ON habit_category_links
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE habit_category_links SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE habit_id = NEW.habit_id AND category_id = NEW.category_id;
+            DELETE FROM sync_tombstones WHERE tbl = 'habit_category_links'
+                AND key = (SELECT uuid FROM habits WHERE id = NEW.habit_id) || '|' || (SELECT uuid FROM habit_categories WHERE id = NEW.category_id);
+        END;
+        CREATE TRIGGER habit_category_links_sync_update AFTER UPDATE ON habit_category_links
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE habit_category_links SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE habit_id = NEW.habit_id AND category_id = NEW.category_id;
+        END;
+        CREATE TRIGGER habit_category_links_sync_delete AFTER DELETE ON habit_category_links
+        WHEN (SELECT applying FROM sync_state) = 0
+            AND (SELECT uuid FROM habits WHERE id = OLD.habit_id) IS NOT NULL
+            AND (SELECT uuid FROM habit_categories WHERE id = OLD.category_id) IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('habit_category_links',
+                (SELECT uuid FROM habits WHERE id = OLD.habit_id) || '|' || (SELECT uuid FROM habit_categories WHERE id = OLD.category_id),
+                json_object('habit_id', (SELECT uuid FROM habits WHERE id = OLD.habit_id),
+                    'category_id', (SELECT uuid FROM habit_categories WHERE id = OLD.category_id)),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+
+        CREATE TRIGGER water_logs_sync_insert AFTER INSERT ON water_logs
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE water_logs SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER water_logs_sync_update AFTER UPDATE ON water_logs
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE water_logs SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER water_logs_sync_delete AFTER DELETE ON water_logs
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('water_logs', OLD.uuid,
+                json_object('id', OLD.uuid, 'logged_at', OLD.logged_at, 'ml', OLD.ml),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+
+        CREATE TRIGGER focus_sessions_sync_insert AFTER INSERT ON focus_sessions
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE focus_sessions SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER focus_sessions_sync_update AFTER UPDATE ON focus_sessions
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE focus_sessions SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER focus_sessions_sync_delete AFTER DELETE ON focus_sessions
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('focus_sessions', OLD.uuid,
+                json_object('id', OLD.uuid, 'finished_at', OLD.finished_at, 'minutes', OLD.minutes),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        """,
     ]
 
     /// Current schema version of the database.
