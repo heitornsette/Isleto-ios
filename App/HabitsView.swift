@@ -1,3 +1,4 @@
+import Combine
 import IsletoCore
 import SwiftUI
 
@@ -21,6 +22,7 @@ struct HabitsView: View {
     @State private var editor: HabitEditorTarget?
     @State private var showingReorder = false
     @State private var showingArchived = false
+    @State private var showingCloud = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -58,6 +60,7 @@ struct HabitsView: View {
                         Button("Reordenar", systemImage: "arrow.up.arrow.down") { showingReorder = true }
                             .disabled(model.habits.count < 2)
                         Button("Arquivados (\(model.archived.count))", systemImage: "archivebox") { showingArchived = true }
+                        Button("Nuvem", systemImage: "icloud") { showingCloud = true }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -81,6 +84,9 @@ struct HabitsView: View {
             .sheet(isPresented: $showingArchived) {
                 ArchivedHabitsView(model: model)
             }
+            .sheet(isPresented: $showingCloud) {
+                CloudView()
+            }
         }
         .task {
             model.reload()
@@ -93,6 +99,9 @@ struct HabitsView: View {
             if arguments.contains("--demo-new-habit") {
                 editor = .new
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .isletoDataChanged)) { _ in
+            model.reload()
         }
         .onChange(of: scenePhase) { _, phase in
             // The widget may have changed the data while the app was in the background.

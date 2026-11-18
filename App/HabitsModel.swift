@@ -54,6 +54,7 @@ final class HabitsModel {
         }
         reload()
         WidgetCenter.shared.reloadAllTimelines()
+        CloudSync.shared.scheduleSync()
         Task { await syncReminders() }
         return result
     }

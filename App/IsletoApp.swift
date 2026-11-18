@@ -24,6 +24,7 @@ enum RootTab: Hashable {
 
 /// The app's sections. More tabs (workouts...) come later.
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab: RootTab = ProcessInfo.processInfo.arguments.contains("--demo-tab-habits") ? .habits : .today
 
     var body: some View {
@@ -37,6 +38,12 @@ struct RootView: View {
         }
         .tint(Color.isletoAccent)
         .fontDesign(.rounded)
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            // Every time the app comes to the front: fetch what the desktop changed.
+            if phase == .active {
+                Task { await CloudSync.shared.syncNow() }
+            }
+        }
     }
 }
 

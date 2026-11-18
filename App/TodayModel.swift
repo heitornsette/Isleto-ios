@@ -55,6 +55,7 @@ final class TodayModel {
         }
         reload()
         WidgetCenter.shared.reloadAllTimelines()
+        CloudSync.shared.scheduleSync()
     }
 
     // MARK: Water
@@ -170,6 +171,7 @@ final class TodayModel {
         Foco ativo: \(summary?.activeFocus.map { "até \($0.end.formatted(date: .omitted, time: .shortened))" } ?? "não")
         Erro: \(errorText ?? "nenhum")
         Live Activities: \(activitiesEnabled ? "permitidas" : "bloqueadas"), \(runningActivities) ativa(s)
+        Nuvem: \(CloudSync.shared.diagnosticsLine)
         """
     }
 

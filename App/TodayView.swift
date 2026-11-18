@@ -1,3 +1,4 @@
+import Combine
 import IsletoCore
 import SwiftUI
 
@@ -5,6 +6,7 @@ import SwiftUI
 struct TodayView: View {
     @State private var model = TodayModel()
     @State private var showingDiagnostics = false
+    @State private var showingCloud = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -26,6 +28,14 @@ struct TodayView: View {
                 }
                 .navigationTitle("Hoje")
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showingCloud = true
+                        } label: {
+                            Image(systemName: CloudSync.shared.isConnected ? "icloud.fill" : "icloud.slash")
+                        }
+                        .accessibilityLabel("Nuvem")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             showingDiagnostics = true
@@ -36,6 +46,9 @@ struct TodayView: View {
                 }
                 .sheet(isPresented: $showingDiagnostics) {
                     DiagnosticsView(model: model)
+                }
+                .sheet(isPresented: $showingCloud) {
+                    CloudView()
                 }
                 .task {
                     model.reload()
@@ -51,6 +64,9 @@ struct TodayView: View {
                     }
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .isletoDataChanged)) { _ in
+            model.reload()
         }
         .onChange(of: scenePhase) { _, phase in
             // The widget may have changed the data while the app was in the background.
