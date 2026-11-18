@@ -60,7 +60,13 @@ Treinos, pausas do pomodoro, timers avulsos e a sincronização com o desktop fi
   em `sync_tombstones`, para o apagamento chegar aos outros aparelhos. Triggers do SQLite cuidam
   disso, então o código continua com INSERT, UPDATE e DELETE simples. `sync_state` guarda o id
   deste aparelho e o cursor da sincronização. O servidor fica no repositório privado
-  `isleto-cloud`; a sincronização em si ainda não existe.
+  `isleto-cloud`.
+- **Nuvem**: ícone da nuvem na aba Hoje (ou **…** > **Nuvem** em Hábitos). Conecta-se uma vez com
+  o endereço do projeto Supabase, a chave publicável e o e-mail e a senha do administrador. A
+  senha não fica guardada; o endereço, a chave e a sessão ficam no Keychain. O app sincroniza ao
+  abrir e alguns segundos depois de cada mudança, e recarrega as telas e o widget quando chegam
+  mudanças do desktop. O motor (`SyncEngine`) e o cliente (`SupabaseClient`) ficam no IsletoCore,
+  com testes contra um servidor falso.
 - **Sequência de hábitos**: conta dias seguidos. Se hoje ainda não foi marcado, a sequência de
   ontem continua valendo até o fim do dia. A regra é a mesma do desktop, com os mesmos testes.
 - **Sem push (APNs)**: a conta gratuita não tem push. A Live Activity só se atualiza sozinha com
