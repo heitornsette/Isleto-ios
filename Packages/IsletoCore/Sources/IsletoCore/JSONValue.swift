@@ -30,7 +30,13 @@ public enum JSONValue: Sendable, Equatable, Codable {
         var container = encoder.singleValueContainer()
         switch self {
         case .string(let value): try container.encode(value)
-        case .number(let value): try container.encode(value)
+        case .number(let value):
+            // Whole numbers as integers ("1", not "1.0"): the server casts some to bigint.
+            if value.rounded() == value, abs(value) < 9_007_199_254_740_992 {
+                try container.encode(Int64(value))
+            } else {
+                try container.encode(value)
+            }
         case .bool(let value): try container.encode(value)
         case .null: try container.encodeNil()
         case .array(let value): try container.encode(value)
