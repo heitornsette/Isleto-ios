@@ -81,23 +81,19 @@ struct TodayWidgetView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            ForEach(habits) { habit in
+            // The current week of each habit; a tap records today (check, relapse, +1).
+            ForEach(habits.prefix(4)) { habit in
                 Button(intent: ToggleHabitIntent(habitID: habit.id)) {
                     HStack(spacing: 6) {
-                        Image(systemName: habit.doneToday ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(habit.doneToday ? Color.isletoHabit : .secondary)
-                        Text(habit.name)
-                            .font(.caption)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        if habit.streak > 0 {
-                            Text("\(habit.streak)")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
+                        Image(systemName: habit.definition.icon)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color(hex: habit.definition.color))
+                            .frame(width: 14)
+                        HabitWeekRow(habit: habit, size: 10)
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(habit.name)
             }
         }
     }
