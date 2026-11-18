@@ -48,7 +48,7 @@ public struct IsletoStore: Sendable {
                 waterGoalMl: WaterStore.goalMl,
                 focusSessions: try FocusStore.sessions(db, day: day),
                 activeFocus: try FocusStore.readActive(db),
-                habits: try HabitStore.list(db, day: day)
+                habits: try HabitStore.list(db, today: Day(now, calendar: calendar), includeArchived: false)
             )
         }
     }

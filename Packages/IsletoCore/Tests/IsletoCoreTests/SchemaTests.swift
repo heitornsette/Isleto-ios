@@ -20,8 +20,13 @@ final class SchemaTests: XCTestCase {
             "settings": ["key", "value"],
             "focus_sessions": ["id", "finished_at", "minutes"],
             "water_logs": ["id", "logged_at", "ml"],
-            "habits": ["id", "name", "created_at"],
-            "habit_checks": ["habit_id", "day"],
+            "habits": [
+                "id", "name", "created_at", "description", "icon", "color", "kind", "schedule",
+                "record", "target", "unit", "reminders", "archived", "sort_order",
+            ],
+            "habit_checks": ["habit_id", "day", "value"],
+            "habit_categories": ["id", "name", "created_at"],
+            "habit_category_links": ["habit_id", "category_id"],
         ]
         try db.read { db in
             let tables = try String.fetchAll(

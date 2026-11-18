@@ -10,7 +10,7 @@ final class IsletoStoreTests: XCTestCase {
         let store = IsletoStore(database: try IsletoDatabase.inMemory())
         try store.water.add(at: nine, calendar: calendar)
         try store.water.add(at: nine, calendar: calendar)
-        try store.habits.add(name: "Ler")
+        try store.habits.create(HabitDefinition(name: "Ler"), at: nine, calendar: calendar)
 
         let summary = try store.today(now: nine, calendar: calendar)
         XCTAssertEqual(summary.waterMl, 500)

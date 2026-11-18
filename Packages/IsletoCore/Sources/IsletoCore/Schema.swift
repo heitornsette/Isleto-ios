@@ -43,6 +43,35 @@ public enum Schema {
             PRIMARY KEY (habit_id, day)
         );
         """,
+        // v5: richer habits (same migration in the desktop). Only adds columns and tables.
+        //   kind: 'build' | 'quit' (a quit habit's check marks a relapse)
+        //   schedule: 'daily' | 'weekdays:1,3,5' (1 = Monday) | 'weekly:3' (times per week)
+        //   record: 'check' | 'count' | 'measure'; habit_checks.value holds the count or measure
+        //   reminders: 'HH:MM' times separated by commas; color: '#RRGGBB'
+        """
+        ALTER TABLE habits ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habits ADD COLUMN icon TEXT NOT NULL DEFAULT 'checkmark';
+        ALTER TABLE habits ADD COLUMN color TEXT NOT NULL DEFAULT '#3AA76D';
+        ALTER TABLE habits ADD COLUMN kind TEXT NOT NULL DEFAULT 'build';
+        ALTER TABLE habits ADD COLUMN schedule TEXT NOT NULL DEFAULT 'daily';
+        ALTER TABLE habits ADD COLUMN record TEXT NOT NULL DEFAULT 'check';
+        ALTER TABLE habits ADD COLUMN target REAL NOT NULL DEFAULT 1;
+        ALTER TABLE habits ADD COLUMN unit TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habits ADD COLUMN reminders TEXT NOT NULL DEFAULT '';
+        ALTER TABLE habits ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habits ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE habit_checks ADD COLUMN value REAL NOT NULL DEFAULT 1;
+        CREATE TABLE habit_categories (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+        );
+        CREATE TABLE habit_category_links (
+            habit_id    INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+            category_id INTEGER NOT NULL REFERENCES habit_categories(id) ON DELETE CASCADE,
+            PRIMARY KEY (habit_id, category_id)
+        );
+        """,
     ]
 
     /// Current schema version of the database.
