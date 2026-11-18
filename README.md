@@ -11,23 +11,28 @@ Tudo é gratuito: não há Mac. O código é editado no Windows, compilado no Gi
 > "custom entitlements" faria isso). Sem App Group, o app e o widget não compartilham dados.
 > Por isso a instalação usa o iloader.
 
-## Estado atual: marco 2, "Hoje"
+## Estado atual: aba Hábitos
 
-**Marco 1 (concluído em 17/11/2026)**: teste de viabilidade. Provou que o app compila sem Mac,
-instala com Apple ID gratuito (pelo iloader) e que o app e o widget compartilham dados pelo
-App Group.
+- **Marco 1 (concluído em 17/11/2026)**: teste de viabilidade. O app compila sem Mac, instala
+  com Apple ID gratuito (pelo iloader), e o app e o widget compartilham dados pelo App Group.
+- **Marco 2**: aba **Hoje** com água (meta de 2000 ml, copo de 250 ml) e foco de 25 min, com
+  Live Activity e notificação local.
+- **Aba Hábitos (em teste)**:
+  - Cartões com a grade das últimas semanas: cada coluna é uma semana (segunda em cima), e
+    cada quadrado preenchido é um dia concluído. O botão do cartão registra hoje.
+  - Tipos: **Criar** (marca o dia feito) e **Largar** (marca o dia da recaída; a sequência
+    conta os dias desde a última).
+  - Repetição: todos os dias, dias da semana, ou X vezes por semana (sequência em semanas).
+  - Registro: Sim/Não, Contagem (cada toque soma 1 até a meta) ou Medida (valor com unidade).
+  - Lembretes (até 3 horários, notificação local), categorias criadas por você, filtro,
+    arquivar, apagar e reordenar.
+  - Detalhe: mapa dos últimos meses, sequência, repetição e calendário do mês; tocar num dia
+    marca, ou abre o valor de contagem e medida.
+  - Widget médio "Hoje": a semana de até 4 hábitos, com toque para registrar hoje.
+  - Ícone do app: o mascote do Isleto (`App/Assets.xcassets`, copiado de
+    `assets/icon` do desktop). O mascote sem fundo fica guardado para uso futuro.
 
-**Marco 2 (em teste)**: as funções do dia, com as mesmas regras e padrões do desktop.
-
-- **Água**: meta de 2000 ml, copo de 250 ml, desfazer o último registro de hoje.
-- **Foco**: sessão de 25 min. O tempo aparece na Dynamic Island e na tela bloqueada, e uma
-  notificação local avisa o fim. A sessão concluída é gravada mesmo se o app estiver fechado
-  (ela é registrada na próxima vez que o app ou o widget abrir).
-- **Hábitos**: até 4, marcar e desmarcar o dia, sequência de dias seguidos.
-- **Widget médio "Hoje"**: água com botão **+250 ml**, foco do dia e hábitos com toque para marcar.
-- **Diagnóstico**: no ícone do estetoscópio, com a prévia do widget e o texto para relatar erros.
-
-Pausas do pomodoro, timers avulsos, lembretes e a sincronização com o desktop ficam para depois.
+Treinos, pausas do pomodoro, timers avulsos e a sincronização com o desktop ficam para depois.
 
 ## Estrutura
 
@@ -37,7 +42,7 @@ Pausas do pomodoro, timers avulsos, lembretes e a sincronização com o desktop 
 | `App/` | App SwiftUI e `Isleto.entitlements`. |
 | `Widgets/` | Extensão única com o widget e a Live Activity, e `IsletoWidgets.entitlements`. |
 | `Shared/` | Código compilado no app e na extensão (App Intent, dados da Live Activity, acesso ao banco). |
-| `Packages/IsletoCore/` | Swift Package com a lógica (esquema, água, foco, hábitos, App Group) e os testes. |
+| `Packages/IsletoCore/` | Swift Package com a lógica (esquema, água, foco, hábitos, sequências, lembretes, App Group) e os testes. |
 | `scripts/ci/` | Scripts usados pelo workflow. |
 | `.github/workflows/ci.yml` | Workflow do GitHub Actions. |
 
@@ -46,8 +51,10 @@ Pausas do pomodoro, timers avulsos, lembretes e a sincronização com o desktop 
 - **Banco**: SQLite (GRDB) no container do App Group, arquivo `isleto.db`. As migrações são
   as mesmas do desktop, com o mesmo controle por `PRAGMA user_version`. Datas são gravadas como
   texto em hora local, no mesmo formato do desktop. A sessão de foco em andamento fica na tabela
-  `settings` do desktop (chave `focus_active`), então o iOS não cria nenhuma tabela que o desktop
-  não tenha. Se uma migração mudar, ela muda nos dois repositórios.
+  `settings` do desktop (chave `focus_active`). Se uma migração mudar, ela muda nos dois
+  repositórios. A migração v5 (campos dos hábitos e categorias) só acrescenta colunas e tabelas,
+  e existe igual no desktop; lá o painel mostra só os 4 primeiros hábitos visíveis (não
+  arquivados, de Criar, do tipo Sim/Não), na ordem do iOS.
 - **Sequência de hábitos**: conta dias seguidos. Se hoje ainda não foi marcado, a sequência de
   ontem continua valendo até o fim do dia. A regra é a mesma do desktop, com os mesmos testes.
 - **Sem push (APNs)**: a conta gratuita não tem push. A Live Activity só se atualiza sozinha com
@@ -108,13 +115,13 @@ commit ou workflow: o repositório é público.
 1. Em **Actions**, abra a execução mais recente do **CI**.
 2. No fim da página, em **Artifacts**, baixe **capturas-de-tela** (vem em `.zip`).
 3. Extraia. As imagens são:
-   - `01-hoje-vazio.png`: a tela "Hoje" sem dados.
-   - `02-hoje-com-dados.png`: água, um foco concluído e três hábitos de exemplo.
-   - `03-habitos.png`: a seção de hábitos, com a sequência.
-   - `04-foco-ativo.png`: um foco de 25 min em andamento.
-   - `05-dynamic-island.png`: o foco na Dynamic Island, fora do app.
-   - `06-diagnostico-e-widget.png`: o diagnóstico (App Group **OK**) e a prévia do widget.
-   - `07-hoje-escuro.png`: a tela "Hoje" no modo escuro.
+   - `01-hoje-vazio.png` e `02-hoje-com-dados.png`: a aba Hoje.
+   - `03-habitos.png`: a aba Hábitos com hábitos de exemplo e as grades.
+   - `04-habito-detalhe.png`: o detalhe de um hábito, com mapa e calendário.
+   - `05-novo-habito.png`: o formulário de novo hábito.
+   - `06-foco-ativo.png` e `07-dynamic-island.png`: o foco no app e na Dynamic Island.
+   - `08-diagnostico-e-widget.png`: o diagnóstico (App Group **OK**) e a prévia do widget.
+   - `09-habitos-escuro.png` e `10-habito-detalhe-escuro.png`: o modo escuro.
    - `modo-de-build.txt`: como o app foi assinado para o simulador. Se disser "sem assinatura",
      um App Group com falha **nas capturas** não indica falha no iPhone.
 
@@ -158,28 +165,29 @@ bloqueou o SMS por excesso de tentativas. Pare de tentar e espere algumas horas.
 
 Faça na ordem e anote o primeiro passo que falhar:
 
-1. Abra o **Isleto**, toque no ícone do estetoscópio (**Diagnóstico**) e confira **App Group: OK**,
-   com um grupo que começa com `group.app.isleto.ios` (o final com o Team ID é normal), e
-   "esquema v4". Feche com **OK**.
-2. **Água**: toque em **+250 ml** duas vezes. Mostra **500 / 2000 ml**. **Desfazer** volta a 250.
-3. **Hábitos**: adicione "Ler" e "Meditar". Toque em "Ler": fica marcado, com a chama **1**.
-   Toque de novo: desmarca. Deixe marcado.
-4. **Widget**: na Tela de Início, remova o widget antigo "Contador de teste", se existir.
-   Toque e segure num espaço vazio, **Editar > Adicionar Widget**, procure **Isleto** e adicione
-   o **Hoje** (médio). Ele mostra a mesma água e os mesmos hábitos do app.
-5. No widget, toque em **+250 ml** e em "Meditar". Abra o app: a água subiu e "Meditar" está
-   marcado. *(O widget grava e o app lê.)*
-6. **Foco**: toque em **Iniciar foco de 25 min**. Na primeira vez, permita as notificações.
-   Saia do app: o tempo aparece na Dynamic Island e no widget.
-7. Feche o app de vez (deslize para cima no seletor de apps) e bloqueie a tela. O tempo
-   continua na tela bloqueada. No fim, chega a notificação "Foco concluído".
-8. Abra o app: a Live Activity sumiu e o rodapé do Foco diz **1 foco(s) concluído(s) hoje**.
-   O widget mostra **1 foco(s) hoje**.
-9. **Cancelar**: inicie outro foco e toque em **Cancelar foco**. A Live Activity some e o total
-   de focos não muda.
-
-Para testar o fim do foco sem esperar 25 min, deixe o teste 7 para quando puder esperar. O
-restante leva poucos minutos.
+1. O ícone do app na Tela de Início é o mascote. Abra o **Isleto**. Na aba **Hoje**, toque no
+   estetoscópio (**Diagnóstico**) e confira **App Group: OK** e "esquema v5". Feche com **OK**.
+2. **Água e foco** (aba Hoje): **+250 ml** soma e **Desfazer** tira. **Iniciar foco** mostra o
+   tempo na Dynamic Island; **Cancelar foco** tira.
+3. **Hábito Sim/Não** (aba Hábitos, **+**): crie "Ler", escolha ícone e cor, **Salvar**. No
+   cartão, toque no quadrado da direita: o quadrado de hoje na grade fica preenchido. Toque de
+   novo: desmarca.
+4. **Contagem**: crie "Copos", **Registro > Contagem**, meta 3. Toque no anel três vezes: ele
+   enche e vira um check.
+5. **Largar**: crie "Refrigerante", **Tipo > Largar**. A grade fica preenchida desde hoje (dia
+   limpo). O botão marca a recaída de hoje: o quadrado esvazia e a sequência vai a 0.
+6. **Dias da semana**: edite "Ler" (toque no cartão, lápis), **Repetição > Dias**, marque só
+   alguns dias. O chip de repetição muda.
+7. **Detalhe**: toque num cartão. No calendário, toque num dia passado: ele é marcado e a
+   grade acompanha. Em "Copos", tocar num dia abre o valor.
+8. **Categorias**: no formulário, crie "Saúde" e marque. Na lista aparece o filtro
+   **Todos / Saúde**.
+9. **Lembrete**: adicione um lembrete para daqui a 2 minutos e permita as notificações. Ela chega
+   na hora.
+10. **Arquivar e reordenar**: na engrenagem do detalhe, **Arquivar** tira o hábito da lista; no
+    menu **…** da lista, **Arquivados** traz de volta e **Reordenar** muda a ordem.
+11. **Widget**: remova o widget antigo e adicione de novo o **Hoje** (médio). Ele mostra a semana
+    de até 4 hábitos; tocar numa linha registra hoje, e o app mostra a mudança.
 
 ### 8. Renovar a cada 7 dias
 
@@ -236,7 +244,7 @@ Commits seguem o [Conventional Commits](https://www.conventionalcommits.org/pt-b
 Exemplos:
 
 ```text
-feat(widgets): adiciona widget médio com água, foco e hábitos
+feat(widgets): mostra a semana de cada hábito no widget
 fix(core): corrige a sequência de hábitos na virada do ano
 docs: explica como renovar o app a cada 7 dias
 ```
