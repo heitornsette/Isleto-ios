@@ -58,16 +58,22 @@ launch
 shot 01-hoje-vazio
 launch --demo-seed
 shot 02-hoje-com-dados
-launch --demo-scroll habits
+launch --demo-tab-habits
 shot 03-habitos
+launch --demo-tab-habits --demo-detail
+shot 04-habito-detalhe
+launch --demo-tab-habits --demo-new-habit
+shot 05-novo-habito
 launch --demo-focus
-shot 04-foco-ativo
+shot 06-foco-ativo
 # Leaving the app shows the Live Activity in the Dynamic Island (Pro simulators).
 xcrun simctl launch "$udid" com.apple.Preferences >/dev/null || true
 sleep 4
-shot 05-dynamic-island
+shot 07-dynamic-island
 launch --demo-diagnostics
-shot 06-diagnostico-e-widget
+shot 08-diagnostico-e-widget
 xcrun simctl ui "$udid" appearance dark || true
-launch
-shot 07-hoje-escuro
+launch --demo-tab-habits
+shot 09-habitos-escuro
+launch --demo-tab-habits --demo-detail
+shot 10-habito-detalhe-escuro
