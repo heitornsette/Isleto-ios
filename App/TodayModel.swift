@@ -24,7 +24,6 @@ final class TodayModel {
 
     var activitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
     var runningActivities: Int { Activity<TimerActivityAttributes>.activities.count }
-    var canAddHabit: Bool { (summary?.habits.count ?? 0) < HabitStore.maxHabits }
 
     // MARK: Loading
 
@@ -62,12 +61,6 @@ final class TodayModel {
 
     func addWater() { change { try $0.water.add() } }
     func undoWater() { change { _ = try $0.water.undoLast() } }
-
-    // MARK: Habits
-
-    func addHabit(_ name: String) { change { _ = try $0.habits.add(name: name) } }
-    func toggleHabit(_ id: Int64) { change { try $0.habits.toggle(id: id) } }
-    func deleteHabit(_ id: Int64) { change { try $0.habits.delete(id: id) } }
 
     // MARK: Focus
 
@@ -189,23 +182,6 @@ final class TodayModel {
 
     /// Launch arguments used only by the CI screenshot script.
     func runDemo(arguments: [String]) {
-        if arguments.contains("--demo-seed"), summary?.habits.isEmpty ?? false {
-            change { store in
-                for name in ["Ler 10 páginas", "Meditar", "Alongar"] {
-                    try store.habits.add(name: name)
-                }
-                if let first = try store.habits.list().first {
-                    try store.habits.toggle(id: first.id)
-                }
-                for _ in 0..<3 {
-                    try store.water.add()
-                }
-                // One finished session, so the counter is not zero.
-                let earlier = Date.now.addingTimeInterval(-40 * 60)
-                try store.focus.start(now: earlier)
-                try store.focus.settle()
-            }
-        }
         if arguments.contains("--demo-focus") {
             startFocus(notify: false)
         }

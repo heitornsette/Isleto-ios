@@ -1,10 +1,9 @@
 import IsletoCore
 import SwiftUI
 
-/// "Hoje": water, focus and habits.
+/// "Hoje": water and focus. Habits have their own tab.
 struct TodayView: View {
     @State private var model = TodayModel()
-    @State private var newHabit = ""
     @State private var showingDiagnostics = false
     @Environment(\.scenePhase) private var scenePhase
 
@@ -23,7 +22,6 @@ struct TodayView: View {
                     if let summary = model.summary {
                         waterSection(summary)
                         focusSection(summary)
-                        habitsSection(summary)
                     }
                 }
                 .navigationTitle("Hoje")
@@ -143,55 +141,5 @@ struct TodayView: View {
         } footer: {
             Text("\(summary.focusSessions) foco(s) concluído(s) hoje. O tempo segue na Dynamic Island e na tela bloqueada com o app fechado.")
         }
-    }
-
-    // MARK: Habits
-
-    private func habitsSection(_ summary: DaySummary) -> some View {
-        Section {
-            ForEach(summary.habits) { habit in
-                Button {
-                    withAnimation { model.toggleHabit(habit.id) }
-                } label: {
-                    HStack {
-                        Image(systemName: habit.doneToday ? "checkmark.circle.fill" : "circle")
-                            .font(.title2)
-                            .foregroundStyle(habit.doneToday ? Color.isletoHabit : .secondary)
-                        Text(habit.name)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if habit.streak > 0 {
-                            Label("\(habit.streak)", systemImage: "flame.fill")
-                                .font(.subheadline.monospacedDigit())
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
-            }
-            .onDelete { offsets in
-                for index in offsets {
-                    model.deleteHabit(summary.habits[index].id)
-                }
-            }
-            if model.canAddHabit {
-                HStack {
-                    TextField("Novo hábito", text: $newHabit)
-                        .submitLabel(.done)
-                        .onSubmit(addHabit)
-                    Button("Adicionar", action: addHabit)
-                        .disabled(newHabit.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        } header: {
-            Label("Hábitos", systemImage: "checkmark.seal.fill")
-                .id("habits")
-        } footer: {
-            Text("Até \(HabitStore.maxHabits) hábitos, como no desktop. Se hoje ainda não foi marcado, a sequência de ontem vale até o fim do dia. Deslize para apagar.")
-        }
-    }
-
-    private func addHabit() {
-        model.addHabit(newHabit)
-        newHabit = ""
     }
 }

@@ -1,4 +1,5 @@
 import AppIntents
+import IsletoCore
 import WidgetKit
 
 // Widget buttons. Compiled into the app and the widget extension; when tapped on
@@ -14,8 +15,9 @@ struct AddWaterIntent: AppIntent {
     }
 }
 
+/// One tap on a habit: check, relapse, +1 or the measure's target (see HabitStore.tap).
 struct ToggleHabitIntent: AppIntent {
-    static let title: LocalizedStringResource = "Marcar hábito de hoje"
+    static let title: LocalizedStringResource = "Registrar hábito de hoje"
 
     @Parameter(title: "Hábito")
     var habitID: Int
@@ -27,7 +29,7 @@ struct ToggleHabitIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        try SharedData.store().habits.toggle(id: Int64(habitID))
+        try SharedData.store().habits.tap(id: Int64(habitID), day: Day(.now))
         WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }
