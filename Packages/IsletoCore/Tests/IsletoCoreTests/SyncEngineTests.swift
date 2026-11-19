@@ -131,7 +131,8 @@ final class SyncEngineTests: XCTestCase {
 
         let report = try await sync(phone, server)
         XCTAssertEqual(report.pushed, 6)
-        for table in SyncEngine.tables {
+        // One row of each habit, water and focus table (workouts have their own test).
+        for table in SyncEngine.tables.prefix(6) {
             let onServer = await server.count(table)
             XCTAssertEqual(onServer, 1, table)
             XCTAssertEqual(try count(phone, "SELECT COUNT(*) FROM \(table) WHERE dirty = 1"), 0, table)
