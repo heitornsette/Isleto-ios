@@ -34,19 +34,38 @@ jobs:
         run: brew install xcodegen ldid
 
       - name: Testes do IsletoCore (macOS)
-        run: swift test --package-path Packages/IsletoCore
+        run: |
+          mkdir -p build/logs
+          if ! swift test --package-path Packages/IsletoCore >build/logs/swift-test.log 2>&1; then
+            bash scripts/ci/annotate-errors.sh build/logs/swift-test.log "Testes do IsletoCore (macOS)"
+            tail -n 80 build/logs/swift-test.log
+            exit 1
+          fi
+          grep -E 'Executed|passed|failed' build/logs/swift-test.log | tail -n 3
 
       - name: Gerar Isleto.xcodeproj
         run: xcodegen generate
 
       - name: Testes do IsletoCore (simulador iOS)
-        run: bash scripts/ci/test-on-simulator.sh
+        run: |
+          bash scripts/ci/test-on-simulator.sh || {
+            bash scripts/ci/annotate-errors.sh build/logs/test-simulator.log "Testes do IsletoCore (simulador)"
+            exit 1
+          }
 
       - name: Gerar Isleto.ipa (sem assinatura + ldid)
-        run: bash scripts/ci/build-ipa.sh
+        run: |
+          bash scripts/ci/build-ipa.sh || {
+            bash scripts/ci/annotate-errors.sh build/logs/archive.log "Build do app"
+            exit 1
+          }
 
       - name: Capturas de tela no simulador
-        run: bash scripts/ci/screenshots.sh
+        run: |
+          bash scripts/ci/screenshots.sh || {
+            bash scripts/ci/annotate-errors.sh build/logs/sim-build.log "Build no simulador"
+            exit 1
+          }
 
       - name: Publicar Isleto.ipa
         uses: actions/upload-artifact@v4
