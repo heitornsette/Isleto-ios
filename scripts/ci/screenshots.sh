@@ -72,8 +72,22 @@ sleep 4
 shot 07-dynamic-island
 launch --demo-diagnostics
 shot 08-diagnostico-e-widget
+launch --demo-tab-workouts
+shot 11-treino
+launch --demo-tab-workouts --demo-plan
+shot 12-ficha
+launch --demo-tab-workouts --demo-workout
+shot 13-treino-em-andamento
+# The rest countdown's Live Activity, in the Dynamic Island.
+xcrun simctl launch "$udid" com.apple.Preferences >/dev/null || true
+sleep 4
+shot 14-descanso-dynamic-island
+launch --demo-tab-workouts --demo-exercise
+shot 15-exercicio-historico
 xcrun simctl ui "$udid" appearance dark || true
 launch --demo-tab-habits
 shot 09-habitos-escuro
 launch --demo-tab-habits --demo-detail
 shot 10-habito-detalhe-escuro
+launch --demo-tab-workouts --demo-workout
+shot 16-treino-escuro
