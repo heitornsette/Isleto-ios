@@ -289,17 +289,15 @@ final class SyncEngineTests: XCTestCase {
         let desktop = try device()
         // The desktop already has a row, so local ids differ between the two devices.
         try exec(desktop, "INSERT INTO exercises (name) VALUES ('Remada')")
-        try phone.write { db in
-            try db.execute(sql: """
-                INSERT INTO exercises (name, muscle) VALUES ('Supino', 'peito');
-                INSERT INTO workout_plans (name) VALUES ('Treino A');
-                INSERT INTO workout_plan_exercises (plan_id, exercise_id, sets, reps) VALUES (1, 1, 4, '8-12');
-                INSERT INTO workouts (plan_id, name, started_at, finished_at)
-                    VALUES (1, 'Treino A', '2026-11-19 07:00:00', '2026-11-19 08:00:00');
-                INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 1, 10, 42.5, 1);
-                INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 2, 8, 45, 1);
-                """)
-        }
+        try exec(phone, """
+            INSERT INTO exercises (name, muscle) VALUES ('Supino', 'peito');
+            INSERT INTO workout_plans (name) VALUES ('Treino A');
+            INSERT INTO workout_plan_exercises (plan_id, exercise_id, sets, reps) VALUES (1, 1, 4, '8-12');
+            INSERT INTO workouts (plan_id, name, started_at, finished_at)
+                VALUES (1, 'Treino A', '2026-11-19 07:00:00', '2026-11-19 08:00:00');
+            INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 1, 10, 42.5, 1);
+            INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 2, 8, 45, 1);
+            """)
         let first = try await sync(phone, server)
         XCTAssertEqual(first.pushed, 6)
         try await sync(desktop, server)
