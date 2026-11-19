@@ -43,13 +43,15 @@ public enum SyncError: LocalizedError {
 ///    local row's, or than the local tombstone's. On the first sync, a remote habit or
 ///    category with the same name as a local one takes its place.
 /// 3. Push the dirty rows and the tombstones, then clear only what was sent and did not
-///    change meanwhile.
+///    change meanwhile. Only tables the server knows (keys of the pull answer) are sent: rows
+///    of a table added in a newer migration wait, dirty, until the server has it too.
 public struct SyncEngine: Sendable {
     public static let pageSize = 1000
     static let maxPages = 10_000
     /// Every synced table, in the order rows are applied (parents first).
     public static let tables = [
         "habit_categories", "habits", "habit_category_links", "habit_checks", "water_logs", "focus_sessions",
+        "exercises", "workout_plans", "workout_plan_exercises", "workouts", "workout_sets",
     ]
 
     private let database: DatabaseQueue
@@ -68,11 +70,15 @@ public struct SyncEngine: Sendable {
         var batch: [String: [[String: JSONValue]]] = [:]
         var since = cursor
         var pages = 0
+        var supported = Set<String>()
         while true {
             pages += 1
             guard pages <= Self.maxPages else { throw SyncError.invalidResponse("páginas demais") }
             let page = try await transport.pull(since: since, maxRows: Self.pageSize)
             for table in Self.tables {
+                if page[table]?.arrayValue != nil {
+                    supported.insert(table)
+                }
                 let rows = page[table]?.arrayValue?.compactMap(\.objectValue) ?? []
                 report.pulled += rows.count
                 batch[table, default: []].append(contentsOf: rows)
@@ -95,6 +101,9 @@ public struct SyncEngine: Sendable {
             try Self.applyChecks(db, rows["habit_checks"] ?? [], &partial)
             try Self.applyUUIDRows(db, .water, rows["water_logs"] ?? [], firstSync: false, &partial)
             try Self.applyUUIDRows(db, .focus, rows["focus_sessions"] ?? [], firstSync: false, &partial)
+            for table in [UUIDTable.exercises, .plans, .planExercises, .workouts, .sets] {
+                try Self.applyUUIDRows(db, table, rows[table.name] ?? [], firstSync: false, &partial)
+            }
             try db.execute(sql: "UPDATE sync_state SET applying = 0, cursor = ?", arguments: [newCursor])
             return partial
         }
@@ -102,7 +111,8 @@ public struct SyncEngine: Sendable {
         report.merged = applied.merged
 
         // 3. Push.
-        let (changes, sent) = try await database.read { try Self.collectChanges($0) }
+        let known = supported
+        let (changes, sent) = try await database.read { try Self.collectChanges($0, supported: known) }
         if sent.count > 0 {
             try await transport.push(changes)
             report.pushed = sent.count
@@ -159,8 +169,20 @@ public struct SyncEngine: Sendable {
 
     // MARK: Tables
 
-    enum Kind: Sendable {
+    enum Kind: Sendable, Equatable {
         case text, real, int, bool
+        /// Local id of a row of that table; its uuid on the server. A row whose parent is
+        /// missing here (deleted, or never received) is skipped.
+        case ref(String)
+        /// Same, but may be null (and is set to null when the parent is missing).
+        case optionalRef(String)
+
+        var parent: String? {
+            switch self {
+            case .ref(let table), .optionalRef(let table): table
+            default: nil
+            }
+        }
     }
 
     /// A table whose rows have their own uuid.
@@ -196,6 +218,54 @@ public struct SyncEngine: Sendable {
         static let focus = UUIDTable(
             name: "focus_sessions", fields: [("finished_at", .text), ("minutes", .int)], children: [], mergeByName: false
         )
+        static let exercises = UUIDTable(
+            name: "exercises",
+            fields: [("name", .text), ("muscle", .text), ("notes", .text), ("archived", .bool), ("created_at", .text)],
+            children: [
+                "DELETE FROM workout_plan_exercises WHERE exercise_id = ?",
+                "DELETE FROM workout_sets WHERE exercise_id = ?",
+            ],
+            mergeByName: false
+        )
+        static let plans = UUIDTable(
+            name: "workout_plans",
+            fields: [("name", .text), ("notes", .text), ("sort_order", .int), ("archived", .bool), ("created_at", .text)],
+            children: [
+                "DELETE FROM workout_plan_exercises WHERE plan_id = ?",
+                "UPDATE workouts SET plan_id = NULL WHERE plan_id = ?",
+            ],
+            mergeByName: false
+        )
+        static let planExercises = UUIDTable(
+            name: "workout_plan_exercises",
+            fields: [
+                ("plan_id", .ref("workout_plans")), ("exercise_id", .ref("exercises")), ("position", .int),
+                ("sets", .int), ("reps", .text), ("rest_seconds", .int),
+            ],
+            children: [],
+            mergeByName: false
+        )
+        static let workouts = UUIDTable(
+            name: "workouts",
+            fields: [
+                ("plan_id", .optionalRef("workout_plans")), ("name", .text), ("started_at", .text),
+                ("finished_at", .text), ("notes", .text),
+            ],
+            children: ["DELETE FROM workout_sets WHERE workout_id = ?"],
+            mergeByName: false
+        )
+        static let sets = UUIDTable(
+            name: "workout_sets",
+            fields: [
+                ("workout_id", .ref("workouts")), ("exercise_id", .ref("exercises")), ("position", .int),
+                ("set_number", .int), ("reps", .int), ("weight", .real), ("done", .bool), ("done_at", .text),
+            ],
+            children: [],
+            mergeByName: false
+        )
+
+        /// Every table whose rows have their own uuid.
+        static let all: [UUIDTable] = [.habits, .categories, .water, .focus, .exercises, .plans, .planExercises, .workouts, .sets]
     }
 
     private static func sqlValue(_ kind: Kind, _ value: JSONValue?) -> DatabaseValue {
@@ -206,6 +276,7 @@ public struct SyncEngine: Sendable {
         case (.int, .number(let number)?): Int64(number).databaseValue
         case (.bool, .bool(let flag)?): Int64(flag ? 1 : 0).databaseValue
         case (.bool, .number(let number)?): Int64(number != 0 ? 1 : 0).databaseValue
+        case (.ref, _), (.optionalRef, _): .null
         default: Int64(0).databaseValue
         }
     }
@@ -257,6 +328,26 @@ public struct SyncEngine: Sendable {
 
             let localVersion = try local.map { ($0.at, $0.by) } ?? tombstoneVersion(db, table.name, uuid)
             if let localVersion, localVersion >= remote { continue }
+
+            // References arrive as uuids: use the local ids.
+            var values: [DatabaseValue] = []
+            var missingParent = false
+            for field in table.fields {
+                guard let parent = field.kind.parent else {
+                    values.append(sqlValue(field.kind, row[field.name]))
+                    continue
+                }
+                var id: Int64?
+                if let parentUUID = row[field.name]?.stringValue {
+                    id = try localID(db, parent, parentUUID)
+                }
+                if id == nil, case .ref = field.kind {
+                    missingParent = true
+                }
+                values.append(id?.databaseValue ?? .null)
+            }
+            // The parent was deleted here, or never reached this device: nothing to attach to.
+            if missingParent, !deleted { continue }
             report.applied += 1
 
             if deleted {
@@ -267,7 +358,6 @@ public struct SyncEngine: Sendable {
                     try db.execute(sql: "DELETE FROM \(table.name) WHERE id = ?", arguments: [local.id])
                 }
             } else {
-                var values = table.fields.map { sqlValue($0.kind, row[$0.name]) }
                 values.append(remote.0.databaseValue)
                 values.append(remote.1.databaseValue)
                 let columns = table.fields.map(\.name)
@@ -403,16 +493,25 @@ public struct SyncEngine: Sendable {
         }
     }
 
-    static func collectChanges(_ db: Database) throws -> ([String: JSONValue], Sent) {
-        var changes: [String: [JSONValue]] = Dictionary(uniqueKeysWithValues: tables.map { ($0, []) })
+    static func collectChanges(
+        _ db: Database,
+        supported: Set<String> = Set(tables)
+    ) throws -> ([String: JSONValue], Sent) {
+        var changes: [String: [JSONValue]] = Dictionary(
+            uniqueKeysWithValues: tables.filter(supported.contains).map { ($0, []) }
+        )
         var sent = Sent()
 
-        for table in [UUIDTable.habits, .categories, .water, .focus] {
-            let columns = table.fields.map(\.name).joined(separator: ", ")
+        for table in UUIDTable.all where supported.contains(table.name) {
+            // References leave as the parent's uuid.
+            let columns = table.fields.map { field in
+                field.kind.parent.map { "(SELECT uuid FROM \($0) WHERE id = t.\(field.name)) AS \(field.name)" }
+                    ?? "t.\(field.name) AS \(field.name)"
+            }.joined(separator: ", ")
             let rows = try Row.fetchAll(
                 db,
                 // "AS rowid": without it SQLite names the column after the INTEGER PRIMARY KEY ("id").
-                sql: "SELECT rowid AS rowid, uuid, updated_at, updated_by, \(columns) FROM \(table.name) WHERE dirty = 1 AND uuid IS NOT NULL"
+                sql: "SELECT t.rowid AS rowid, t.uuid, t.updated_at, t.updated_by, \(columns) FROM \(table.name) t WHERE t.dirty = 1 AND t.uuid IS NOT NULL"
             )
             for row in rows {
                 let updatedAt: String = row["updated_at"]
@@ -434,7 +533,7 @@ public struct SyncEngine: Sendable {
             SELECT c.rowid AS rowid, h.uuid AS habit_uuid, c.day, c.value, c.updated_at, c.updated_by
             FROM habit_checks c JOIN habits h ON h.id = c.habit_id
             WHERE c.dirty = 1 AND h.uuid IS NOT NULL
-            """) {
+            """) where supported.contains("habit_checks") {
             let updatedAt: String = row["updated_at"]
             changes["habit_checks", default: []].append(.object([
                 "habit_id": .string(row["habit_uuid"]),
@@ -453,7 +552,7 @@ public struct SyncEngine: Sendable {
             JOIN habits h ON h.id = l.habit_id
             JOIN habit_categories k ON k.id = l.category_id
             WHERE l.dirty = 1 AND h.uuid IS NOT NULL AND k.uuid IS NOT NULL
-            """) {
+            """) where supported.contains("habit_category_links") {
             let updatedAt: String = row["updated_at"]
             changes["habit_category_links", default: []].append(.object([
                 "habit_id": .string(row["habit_uuid"]),
@@ -471,9 +570,9 @@ public struct SyncEngine: Sendable {
             guard changes[table] != nil,
                   case .object(var item)? = try? JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
             else { continue }
-            if table == "habits" {
-                // SQLite's json_object() writes the 0/1 of the column; the server wants a boolean.
-                item["archived"] = .bool((item["archived"]?.doubleValue ?? 0) != 0)
+            // SQLite's json_object() writes the 0/1 of the column; the server wants a boolean.
+            for field in UUIDTable.all.first(where: { $0.name == table })?.fields ?? [] where field.kind == .bool {
+                item[field.name] = .bool((item[field.name]?.doubleValue ?? 0) != 0)
             }
             let deletedAt: String = row["deleted_at"]
             item["updated_at"] = .string(deletedAt)

@@ -8,9 +8,14 @@ actor FakeServer: SyncTransport {
     private var rows: [String: (table: String, row: [String: JSONValue], version: Int64)] = [:]
     private var version: Int64 = 0
     private var pageSize: Int?
+    /// Tables of an older server; nil = all of them.
+    private var known: [String]?
     private(set) var pushes = 0
 
     func setPageSize(_ size: Int?) { pageSize = size }
+    func setKnownTables(_ tables: [String]?) { known = tables }
+
+    func row(_ table: String) -> [String: JSONValue]? { rows.values.first { $0.table == table }?.row }
 
     func count(_ table: String) -> Int { rows.values.filter { $0.table == table }.count }
 
@@ -26,7 +31,11 @@ actor FakeServer: SyncTransport {
     func push(_ changes: [String: JSONValue]) async throws {
         pushes += 1
         for table in SyncEngine.tables {
-            for case .object(let row) in changes[table]?.arrayValue ?? [] {
+            guard let list = changes[table]?.arrayValue else { continue }
+            if let known, !known.contains(table) {
+                throw SyncError.invalidResponse("tabela desconhecida: \(table)")
+            }
+            for case .object(let row) in list {
                 let key = Self.key(table, row)
                 if let stored = rows[key], SyncEngine.version(row) <= SyncEngine.version(stored.row) { continue }
                 version += 1
@@ -38,7 +47,8 @@ actor FakeServer: SyncTransport {
     func pull(since: Int64, maxRows: Int) async throws -> JSONValue {
         let limit = pageSize ?? maxRows
         let found = rows.values.filter { $0.version > since }.sorted { $0.version < $1.version }
-        var page: [String: [JSONValue]] = Dictionary(uniqueKeysWithValues: SyncEngine.tables.map { ($0, []) })
+        let tables = SyncEngine.tables.filter { known?.contains($0) ?? true }
+        var page: [String: [JSONValue]] = Dictionary(uniqueKeysWithValues: tables.map { ($0, []) })
         var cursor = since
         for entry in found.prefix(limit) {
             page[entry.table, default: []].append(.object(entry.row))
@@ -55,7 +65,10 @@ struct OfflineServer: SyncTransport {
     struct Offline: Error {}
     func push(_ changes: [String: JSONValue]) async throws { throw Offline() }
     func pull(since: Int64, maxRows: Int) async throws -> JSONValue {
-        .object(["cursor": .number(Double(since)), "has_more": .bool(false)])
+        var page = Dictionary(uniqueKeysWithValues: SyncEngine.tables.map { ($0, JSONValue.array([])) })
+        page["cursor"] = .number(Double(since))
+        page["has_more"] = .bool(false)
+        return .object(page)
     }
 }
 
@@ -268,5 +281,71 @@ final class SyncEngineTests: XCTestCase {
         try store.water.add()
         let report = try await sync(db, server)
         XCTAssertEqual(report.pushed, 2)
+    }
+
+    func testWorkoutsTravelWithTheirReferences() async throws {
+        let server = FakeServer()
+        let phone = try device()
+        let desktop = try device()
+        // The desktop already has a row, so local ids differ between the two devices.
+        try exec(desktop, "INSERT INTO exercises (name) VALUES ('Remada')")
+        try phone.write { db in
+            try db.execute(sql: """
+                INSERT INTO exercises (name, muscle) VALUES ('Supino', 'peito');
+                INSERT INTO workout_plans (name) VALUES ('Treino A');
+                INSERT INTO workout_plan_exercises (plan_id, exercise_id, sets, reps) VALUES (1, 1, 4, '8-12');
+                INSERT INTO workouts (plan_id, name, started_at, finished_at)
+                    VALUES (1, 'Treino A', '2026-11-19 07:00:00', '2026-11-19 08:00:00');
+                INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 1, 10, 42.5, 1);
+                INSERT INTO workout_sets (workout_id, exercise_id, set_number, reps, weight, done) VALUES (1, 1, 2, 8, 45, 1);
+                """)
+        }
+        let first = try await sync(phone, server)
+        XCTAssertEqual(first.pushed, 6)
+        try await sync(desktop, server)
+
+        XCTAssertEqual(try count(desktop, """
+            SELECT COUNT(*) FROM workout_sets s
+            JOIN workouts w ON w.id = s.workout_id
+            JOIN workout_plans p ON p.id = w.plan_id
+            JOIN exercises e ON e.id = s.exercise_id
+            WHERE e.name = 'Supino' AND p.name = 'Treino A' AND s.done = 1
+            """), 2, "sets point to the local ids of their workout and exercise")
+        XCTAssertEqual(try count(desktop, "SELECT CAST(SUM(weight) * 10 AS INTEGER) FROM workout_sets"), 875)
+        let pushedSet = await server.row("workout_sets")
+        XCTAssertEqual(pushedSet?["done"], .bool(true), "booleans leave as booleans")
+
+        // Deleting the plan keeps the workout, without a plan, on both devices.
+        try exec(phone, "DELETE FROM workout_plans")
+        try await sync(phone, server)
+        try await sync(desktop, server)
+        XCTAssertEqual(try count(desktop, "SELECT COUNT(*) FROM workout_plan_exercises"), 0)
+        XCTAssertEqual(try count(desktop, "SELECT COUNT(*) FROM workouts WHERE plan_id IS NULL"), 1)
+
+        // Deleting the workout cascades to its sets (foreign keys are on); the desktop follows.
+        try exec(phone, "DELETE FROM workouts")
+        XCTAssertEqual(try count(phone, "SELECT COUNT(*) FROM sync_tombstones WHERE tbl = 'workout_sets'"), 2)
+        try await sync(phone, server)
+        try await sync(desktop, server)
+        XCTAssertEqual(try count(desktop, "SELECT COUNT(*) FROM workout_sets"), 0)
+        XCTAssertEqual(try count(desktop, "SELECT COUNT(*) FROM exercises"), 2)
+        let last = try await sync(desktop, server)
+        XCTAssertEqual(last.pushed, 0, "applied deletes are not sent back")
+    }
+
+    func testRowsOfATableTheServerLacksWaitForIt() async throws {
+        let server = FakeServer()
+        await server.setKnownTables(Array(SyncEngine.tables.prefix(6)))
+        let phone = try device()
+        try addHabit(phone, "Ler")
+        try exec(phone, "INSERT INTO exercises (name) VALUES ('Supino')")
+        let before = try await sync(phone, server)
+        XCTAssertEqual(before.pushed, 1, "only the habit")
+        XCTAssertEqual(try count(phone, "SELECT COUNT(*) FROM exercises WHERE dirty = 1"), 1)
+
+        await server.setKnownTables(nil)
+        let after = try await sync(phone, server)
+        XCTAssertEqual(after.pushed, 1)
+        XCTAssertEqual(try count(phone, "SELECT COUNT(*) FROM exercises WHERE dirty = 1"), 0)
     }
 }
