@@ -224,6 +224,10 @@ public struct ExerciseHistory: Equatable, Sendable {
 
     public let entries: [Entry]
 
+    public init(entries: [Entry]) {
+        self.entries = entries
+    }
+
     /// Heaviest done set ever.
     public var record: Double? { entries.map(\.bestWeight).max() }
 }

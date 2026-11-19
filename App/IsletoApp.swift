@@ -126,10 +126,10 @@ enum DemoData {
                 for set in block.sets {
                     let weight = Double(20 + index * 5 + round * 2) + (set.setNumber == 3 ? 2.5 : 0)
                     try? workouts.updateSet(id: set.id, reps: 12 - set.setNumber, weight: weight)
-                    try? workouts.setDone(id: set.id, true, now: start)
+                    _ = try? workouts.setDone(id: set.id, true, now: start)
                 }
             }
-            try? workouts.finishWorkout(id: id, now: start.addingTimeInterval(55 * 60))
+            _ = try? workouts.finishWorkout(id: id, now: start.addingTimeInterval(55 * 60))
         }
     }
 }
