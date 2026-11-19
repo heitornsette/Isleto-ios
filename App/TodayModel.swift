@@ -24,6 +24,10 @@ final class TodayModel {
 
     var activitiesEnabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
     var runningActivities: Int { Activity<TimerActivityAttributes>.activities.count }
+    /// Only the focus ones: the rest timer of a workout has its own.
+    private var focusActivities: [Activity<TimerActivityAttributes>] {
+        Activity<TimerActivityAttributes>.activities.filter { $0.attributes.kind == .focus }
+    }
 
     // MARK: Loading
 
@@ -106,7 +110,7 @@ final class TodayModel {
             focusMessage = "Live Activities desativadas para o Isleto em Ajustes."
             return
         }
-        guard Activity<TimerActivityAttributes>.activities.isEmpty else { return }
+        guard focusActivities.isEmpty else { return }
         let state = TimerActivityAttributes.ContentState(start: session.start, end: session.end)
         do {
             _ = try Activity.request(
@@ -121,7 +125,7 @@ final class TodayModel {
     }
 
     private func endActivities() {
-        let activities = Activity<TimerActivityAttributes>.activities
+        let activities = focusActivities
         guard !activities.isEmpty else { return }
         Task {
             for activity in activities {

@@ -14,5 +14,12 @@ struct TimerActivityAttributes: ActivityAttributes {
         var range: ClosedRange<Date> { start...max(start, end) }
     }
 
+    /// What the countdown is for: the focus session or the rest between workout sets.
+    enum Kind: String, Codable, Hashable {
+        case focus
+        case rest
+    }
+
     var title: String
+    var kind: Kind = .focus
 }
