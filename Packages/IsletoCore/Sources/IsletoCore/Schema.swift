@@ -272,6 +272,202 @@ public enum Schema {
                 strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
         END;
         """,
+        // v7: workouts (same migration in the desktop and the isleto-cloud tables). Only adds tables:
+        //   exercises: the exercise library (catalog exercises get a fixed uuid, so two devices
+        //   adding the same one write the same row); workout_plans ("fichas") and their exercises;
+        //   workouts: one per session, finished_at = '' while it runs; workout_sets: the sets
+        //   of a workout (weight in kg). Same sync columns and triggers as v6. A child's tombstone
+        //   may have a null parent uuid when the parent was deleted first (cascade).
+        """
+        CREATE TABLE exercises (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            muscle      TEXT NOT NULL DEFAULT '',
+            notes       TEXT NOT NULL DEFAULT '',
+            archived    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            uuid        TEXT,
+            updated_at  TEXT NOT NULL DEFAULT '',
+            updated_by  TEXT NOT NULL DEFAULT '',
+            dirty       INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE UNIQUE INDEX exercises_uuid ON exercises (uuid);
+        CREATE TABLE workout_plans (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            notes       TEXT NOT NULL DEFAULT '',
+            sort_order  INTEGER NOT NULL DEFAULT 0,
+            archived    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            uuid        TEXT,
+            updated_at  TEXT NOT NULL DEFAULT '',
+            updated_by  TEXT NOT NULL DEFAULT '',
+            dirty       INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE UNIQUE INDEX workout_plans_uuid ON workout_plans (uuid);
+        CREATE TABLE workout_plan_exercises (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id      INTEGER NOT NULL REFERENCES workout_plans(id) ON DELETE CASCADE,
+            exercise_id  INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+            position     INTEGER NOT NULL DEFAULT 0,
+            sets         INTEGER NOT NULL DEFAULT 3,
+            reps         TEXT NOT NULL DEFAULT '10',
+            rest_seconds INTEGER NOT NULL DEFAULT 90,
+            uuid        TEXT,
+            updated_at  TEXT NOT NULL DEFAULT '',
+            updated_by  TEXT NOT NULL DEFAULT '',
+            dirty       INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE UNIQUE INDEX workout_plan_exercises_uuid ON workout_plan_exercises (uuid);
+        CREATE TABLE workouts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id     INTEGER REFERENCES workout_plans(id) ON DELETE SET NULL,
+            name        TEXT NOT NULL,
+            started_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            finished_at TEXT NOT NULL DEFAULT '',
+            notes       TEXT NOT NULL DEFAULT '',
+            uuid        TEXT,
+            updated_at  TEXT NOT NULL DEFAULT '',
+            updated_by  TEXT NOT NULL DEFAULT '',
+            dirty       INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE UNIQUE INDEX workouts_uuid ON workouts (uuid);
+        CREATE TABLE workout_sets (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            workout_id  INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+            exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+            position    INTEGER NOT NULL DEFAULT 0,
+            set_number  INTEGER NOT NULL DEFAULT 1,
+            reps        INTEGER NOT NULL DEFAULT 0,
+            weight      REAL NOT NULL DEFAULT 0,
+            done        INTEGER NOT NULL DEFAULT 0,
+            done_at     TEXT NOT NULL DEFAULT '',
+            uuid        TEXT,
+            updated_at  TEXT NOT NULL DEFAULT '',
+            updated_by  TEXT NOT NULL DEFAULT '',
+            dirty       INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE UNIQUE INDEX workout_sets_uuid ON workout_sets (uuid);
+        CREATE INDEX workout_plan_exercises_plan ON workout_plan_exercises (plan_id);
+        CREATE INDEX workouts_started ON workouts (started_at);
+        CREATE INDEX workout_sets_workout ON workout_sets (workout_id);
+        CREATE INDEX workout_sets_exercise ON workout_sets (exercise_id);
+        CREATE TRIGGER exercises_sync_insert AFTER INSERT ON exercises
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE exercises SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'exercises' AND key = (SELECT uuid FROM exercises WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER exercises_sync_update AFTER UPDATE ON exercises
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE exercises SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER exercises_sync_delete AFTER DELETE ON exercises
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('exercises', OLD.uuid,
+                json_object('id', OLD.uuid, 'name', OLD.name, 'muscle', OLD.muscle, 'notes', OLD.notes,
+                'archived', OLD.archived, 'created_at', OLD.created_at),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        CREATE TRIGGER workout_plans_sync_insert AFTER INSERT ON workout_plans
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE workout_plans SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'workout_plans' AND key = (SELECT uuid FROM workout_plans WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER workout_plans_sync_update AFTER UPDATE ON workout_plans
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE workout_plans SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER workout_plans_sync_delete AFTER DELETE ON workout_plans
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('workout_plans', OLD.uuid,
+                json_object('id', OLD.uuid, 'name', OLD.name, 'notes', OLD.notes, 'sort_order', OLD.sort_order,
+                'archived', OLD.archived, 'created_at', OLD.created_at),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        CREATE TRIGGER workout_plan_exercises_sync_insert AFTER INSERT ON workout_plan_exercises
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE workout_plan_exercises SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'workout_plan_exercises' AND key = (SELECT uuid FROM workout_plan_exercises WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER workout_plan_exercises_sync_update AFTER UPDATE ON workout_plan_exercises
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE workout_plan_exercises SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER workout_plan_exercises_sync_delete AFTER DELETE ON workout_plan_exercises
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('workout_plan_exercises', OLD.uuid,
+                json_object('id', OLD.uuid, 'plan_id', (SELECT uuid FROM workout_plans WHERE id = OLD.plan_id),
+                'exercise_id', (SELECT uuid FROM exercises WHERE id = OLD.exercise_id),
+                'position', OLD.position, 'sets', OLD.sets, 'reps', OLD.reps,
+                'rest_seconds', OLD.rest_seconds),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        CREATE TRIGGER workouts_sync_insert AFTER INSERT ON workouts
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE workouts SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'workouts' AND key = (SELECT uuid FROM workouts WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER workouts_sync_update AFTER UPDATE ON workouts
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE workouts SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER workouts_sync_delete AFTER DELETE ON workouts
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('workouts', OLD.uuid,
+                json_object('id', OLD.uuid, 'plan_id', (SELECT uuid FROM workout_plans WHERE id = OLD.plan_id),
+                'name', OLD.name, 'started_at', OLD.started_at, 'finished_at', OLD.finished_at,
+                'notes', OLD.notes),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        CREATE TRIGGER workout_sets_sync_insert AFTER INSERT ON workout_sets
+        WHEN (SELECT applying FROM sync_state) = 0
+        BEGIN
+            UPDATE workout_sets SET uuid = COALESCE(NEW.uuid, lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6)))),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+            DELETE FROM sync_tombstones WHERE tbl = 'workout_sets' AND key = (SELECT uuid FROM workout_sets WHERE id = NEW.id);
+        END;
+        CREATE TRIGGER workout_sets_sync_update AFTER UPDATE ON workout_sets
+        WHEN (SELECT applying FROM sync_state) = 0 AND NEW.updated_at IS OLD.updated_at AND NEW.dirty IS OLD.dirty
+        BEGIN
+            UPDATE workout_sets SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), updated_by = (SELECT device_id FROM sync_state), dirty = 1
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER workout_sets_sync_delete AFTER DELETE ON workout_sets
+        WHEN (SELECT applying FROM sync_state) = 0 AND OLD.uuid IS NOT NULL
+        BEGIN
+            INSERT OR REPLACE INTO sync_tombstones (tbl, key, row, deleted_at, deleted_by) VALUES ('workout_sets', OLD.uuid,
+                json_object('id', OLD.uuid, 'workout_id', (SELECT uuid FROM workouts WHERE id = OLD.workout_id),
+                'exercise_id', (SELECT uuid FROM exercises WHERE id = OLD.exercise_id),
+                'position', OLD.position, 'set_number', OLD.set_number, 'reps', OLD.reps,
+                'weight', OLD.weight, 'done', OLD.done, 'done_at', OLD.done_at),
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), (SELECT device_id FROM sync_state));
+        END;
+        """,
     ]
 
     /// Current schema version of the database.

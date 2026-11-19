@@ -30,6 +30,21 @@ final class SchemaTests: XCTestCase {
             "habit_category_links": ["habit_id", "category_id", "updated_at", "updated_by", "dirty"],
             "sync_state": ["id", "device_id", "cursor", "applying", "last_sync"],
             "sync_tombstones": ["tbl", "key", "row", "deleted_at", "deleted_by"],
+            "exercises": ["id", "name", "muscle", "notes", "archived", "created_at", "uuid", "updated_at", "updated_by", "dirty"],
+            "workout_plans": [
+                "id", "name", "notes", "sort_order", "archived", "created_at", "uuid", "updated_at", "updated_by", "dirty",
+            ],
+            "workout_plan_exercises": [
+                "id", "plan_id", "exercise_id", "position", "sets", "reps", "rest_seconds",
+                "uuid", "updated_at", "updated_by", "dirty",
+            ],
+            "workouts": [
+                "id", "plan_id", "name", "started_at", "finished_at", "notes", "uuid", "updated_at", "updated_by", "dirty",
+            ],
+            "workout_sets": [
+                "id", "workout_id", "exercise_id", "position", "set_number", "reps", "weight", "done", "done_at",
+                "uuid", "updated_at", "updated_by", "dirty",
+            ],
         ]
         try db.read { db in
             let tables = try String.fetchAll(
