@@ -20,12 +20,21 @@ struct IsletoApp: App {
 enum RootTab: Hashable {
     case today
     case habits
+    case workouts
+
+    /// CI screenshots open on a given tab.
+    static var initial: RootTab {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--demo-tab-habits") { return .habits }
+        if arguments.contains("--demo-tab-workouts") { return .workouts }
+        return .today
+    }
 }
 
-/// The app's sections. More tabs (workouts...) come later.
+/// The app's sections.
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab: RootTab = ProcessInfo.processInfo.arguments.contains("--demo-tab-habits") ? .habits : .today
+    @State private var tab = RootTab.initial
 
     var body: some View {
         TabView(selection: $tab) {
@@ -35,6 +44,9 @@ struct RootView: View {
             HabitsView()
                 .tabItem { Label("Hábitos", systemImage: "square.grid.3x3.fill") }
                 .tag(RootTab.habits)
+            WorkoutsView()
+                .tabItem { Label("Treino", systemImage: "dumbbell.fill") }
+                .tag(RootTab.workouts)
         }
         .tint(Color.isletoAccent)
         .fontDesign(.rounded)
@@ -82,5 +94,42 @@ enum DemoData {
         // One finished focus session, so the counter is not zero.
         try? store.focus.start(now: Date.now.addingTimeInterval(-40 * 60))
         try? store.focus.settle()
+        seedWorkouts(store.workouts)
+    }
+
+    /// Two plans and a few past workouts.
+    private static func seedWorkouts(_ workouts: WorkoutStore) {
+        let plans: [(String, [String])] = [
+            ("Treino A · Peito e tríceps", ["Supino reto", "Supino inclinado", "Crucifixo", "Tríceps corda"]),
+            ("Treino B · Costas e bíceps", ["Puxada frontal", "Remada baixa", "Rosca direta"]),
+        ]
+        var planIDs: [Int64] = []
+        for (name, exercises) in plans {
+            guard let planID = try? workouts.createPlan(name: name) else { continue }
+            planIDs.append(planID)
+            for exercise in exercises {
+                guard let entry = ExerciseCatalog.all.first(where: { $0.name == exercise }),
+                      let id = try? workouts.exerciseID(for: entry),
+                      let item = try? workouts.addExercise(id, toPlan: planID)
+                else { continue }
+                try? workouts.updatePlanExercise(id: item, sets: 3, reps: "8-12", restSeconds: 90)
+            }
+        }
+        // Past workouts, a little heavier each time.
+        for (round, daysAgo) in [9, 6, 4, 2].enumerated() {
+            let planID = planIDs[round % planIDs.count]
+            let start = Date.now.addingTimeInterval(TimeInterval(-daysAgo * 86_400 - 3600))
+            guard let id = try? workouts.startWorkout(planID: planID, now: start),
+                  let workout = try? workouts.workout(id: id)
+            else { continue }
+            for (index, block) in workout.blocks.enumerated() {
+                for set in block.sets {
+                    let weight = Double(20 + index * 5 + round * 2) + (set.setNumber == 3 ? 2.5 : 0)
+                    try? workouts.updateSet(id: set.id, reps: 12 - set.setNumber, weight: weight)
+                    try? workouts.setDone(id: set.id, true, now: start)
+                }
+            }
+            try? workouts.finishWorkout(id: id, now: start.addingTimeInterval(55 * 60))
+        }
     }
 }
