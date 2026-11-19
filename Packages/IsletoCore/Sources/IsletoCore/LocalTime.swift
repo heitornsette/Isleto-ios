@@ -19,6 +19,20 @@ public enum LocalTime {
         )
     }
 
+    /// Reads "YYYY-MM-DD HH:MM:SS" back (or "YYYY-MM-DD", as midnight). Nil if malformed.
+    public static func date(_ text: String, calendar: Calendar = .current) -> Date? {
+        let parts = text.split(whereSeparator: { $0 == "-" || $0 == " " || $0 == ":" || $0 == "T" }).map { Int($0) }
+        guard parts.count == 3 || parts.count == 6, parts.allSatisfy({ $0 != nil }) else { return nil }
+        let values = parts.map { $0! }
+        var components = DateComponents(year: values[0], month: values[1], day: values[2])
+        if values.count == 6 {
+            components.hour = values[3]
+            components.minute = values[4]
+            components.second = values[5]
+        }
+        return calendar.date(from: components)
+    }
+
     /// Midnight that starts the next day, when "today" totals reset.
     public static func startOfNextDay(after date: Date, calendar: Calendar = .current) -> Date {
         let start = calendar.startOfDay(for: date)

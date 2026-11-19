@@ -28,6 +28,7 @@ public struct IsletoStore: Sendable {
     public let water: WaterStore
     public let focus: FocusStore
     public let habits: HabitStore
+    public let workouts: WorkoutStore
     private let database: DatabaseQueue
 
     public init(database: DatabaseQueue) {
@@ -35,6 +36,7 @@ public struct IsletoStore: Sendable {
         water = WaterStore(database: database)
         focus = FocusStore(database: database)
         habits = HabitStore(database: database)
+        workouts = WorkoutStore(database: database)
     }
 
     /// Today's data. A focus session that ended while the app was closed is saved
